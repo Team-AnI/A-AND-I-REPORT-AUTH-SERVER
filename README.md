@@ -3,6 +3,16 @@
 `aandiclub.com` 핵심 인증 서비스입니다.
 
 ## Local Run (Docker Compose)
+사전 준비:
+```bash
+cp .env.example .env
+```
+
+필수 확인(게이트웨이/인증 값 일치):
+- `JWT_SECRET` == `AUTH_JWT_SECRET`
+- `JWT_ISSUER` == `AUTH_ISSUER_URI`
+- `JWT_AUDIENCE` == `AUTH_AUDIENCE`
+
 ```bash
 docker compose up --build
 ```
@@ -27,6 +37,8 @@ docker compose up --build
   - `APP_DIR`: EC2 내 compose 배포 경로 (기본 `/opt/auth`)
   - `POSTGRES_DB`: 기본 `auth`
   - `POSTGRES_USER`: 기본 `auth`
+  - `JWT_ISSUER`: 예) `https://auth.aandiclub.com`
+  - `JWT_AUDIENCE`: 예) `aandiclub-api`
   - `AWS_PORT`: 기본 `22` (옵션)
 
 - GitHub Actions Repository Secrets
@@ -34,6 +46,7 @@ docker compose up --build
   - `AWS_HOST`: 배포 대상 EC2 호스트
   - `AWS_USER`: SSH 유저
   - `AWS_SSH_KEY`: SSH 개인키
+  - `JWT_SECRET`: JWT 서명 키 (32 bytes 이상 강한 랜덤값)
   - `POSTGRES_PASSWORD`: PostgreSQL 비밀번호
   - `REDIS_PASSWORD`: Redis 비밀번호
 

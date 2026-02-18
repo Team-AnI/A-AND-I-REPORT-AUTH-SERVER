@@ -38,3 +38,8 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### Secrets / Env ###
+.env
+.env.*
+!.env.example

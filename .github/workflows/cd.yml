@@ -21,8 +21,11 @@ jobs:
       APP_DIR: ${{ vars.APP_DIR || '/opt/auth' }}
       POSTGRES_DB: ${{ vars.POSTGRES_DB || 'auth' }}
       POSTGRES_USER: ${{ vars.POSTGRES_USER || 'auth' }}
+      JWT_ISSUER: ${{ vars.JWT_ISSUER }}
+      JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
 
     steps:
       - name: Checkout
@@ -35,6 +38,12 @@ jobs:
             echo "Expected format: vX.Y.Z"
             exit 1
           fi
+
+      - name: Validate required auth JWT config
+        run: |
+          [[ -n "${JWT_ISSUER}" ]] || (echo "Missing vars.JWT_ISSUER" && exit 1)
+          [[ -n "${JWT_AUDIENCE}" ]] || (echo "Missing vars.JWT_AUDIENCE" && exit 1)
+          [[ -n "${JWT_SECRET}" ]] || (echo "Missing secrets.JWT_SECRET" && exit 1)
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -67,14 +76,17 @@ jobs:
           APP_DIR: ${{ env.APP_DIR }}
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
           POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          JWT_ISSUER: ${{ env.JWT_ISSUER }}
+          JWT_AUDIENCE: ${{ env.JWT_AUDIENCE }}
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
           REDIS_PASSWORD: ${{ env.REDIS_PASSWORD }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
         with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
           port: ${{ vars.AWS_PORT || '22' }}
-          envs: AWS_REGION,IMAGE_URI,APP_DIR,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,REDIS_PASSWORD
+          envs: AWS_REGION,IMAGE_URI,APP_DIR,POSTGRES_DB,POSTGRES_USER,JWT_ISSUER,JWT_AUDIENCE,POSTGRES_PASSWORD,REDIS_PASSWORD,JWT_SECRET
           script: |
             set -euo pipefail
 
@@ -130,6 +142,9 @@ jobs:
                   REDIS_HOST: redis
                   REDIS_PORT: 6379
                   REDIS_PASSWORD: ${REDIS_PASSWORD}
+                  JWT_ISSUER: ${JWT_ISSUER}
+                  JWT_AUDIENCE: ${JWT_AUDIENCE}
+                  JWT_SECRET: ${JWT_SECRET}
 
             volumes:
               postgres_data:
@@ -139,15 +154,21 @@ jobs:
             IMAGE_URI="${IMAGE_URI}" \
             POSTGRES_DB="${POSTGRES_DB}" \
             POSTGRES_USER="${POSTGRES_USER}" \
+            JWT_ISSUER="${JWT_ISSUER}" \
+            JWT_AUDIENCE="${JWT_AUDIENCE}" \
             POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
             REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            JWT_SECRET="${JWT_SECRET}" \
             docker compose pull
 
             IMAGE_URI="${IMAGE_URI}" \
             POSTGRES_DB="${POSTGRES_DB}" \
             POSTGRES_USER="${POSTGRES_USER}" \
+            JWT_ISSUER="${JWT_ISSUER}" \
+            JWT_AUDIENCE="${JWT_AUDIENCE}" \
             POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
             REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            JWT_SECRET="${JWT_SECRET}" \
             docker compose up -d --remove-orphans
 
             docker image prune -f --filter "until=72h"
