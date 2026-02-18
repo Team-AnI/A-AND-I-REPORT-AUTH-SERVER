@@ -10,6 +10,12 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+  flyway:
+    enabled: ${DB_MIGRATION_ENABLED:true}
+    url: ${DB_JDBC_URL:jdbc:postgresql://localhost:5432/auth}
+    user: ${DB_USERNAME:auth}
+    password: ${DB_PASSWORD:auth}
+    locations: classpath:db/migration
 
 server:
   forward-headers-strategy: framework
