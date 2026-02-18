@@ -135,7 +135,6 @@ class AdminServiceImpl(
 		).flatMap { savedUser ->
 			userInviteRepository.save(
 				UserInviteEntity(
-					id = UUID.randomUUID(),
 					userId = requireNotNull(savedUser.id),
 					tokenHash = hashedInviteToken,
 					expiresAt = expiresAt,
