@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: auth
+  r2dbc:
+    url: ${DB_R2DBC_URL:r2dbc:postgresql://localhost:5432/auth}
+    username: ${DB_USERNAME:auth}
+    password: ${DB_PASSWORD:auth}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+security:
+  jwt:
+    issuer: ${JWT_ISSUER:aandiclub-auth}
+    audience: ${JWT_AUDIENCE:aandiclub-api}
+    secret: ${JWT_SECRET:change-this-secret-at-least-32-bytes-long}
+    access-token-exp-seconds: ${JWT_ACCESS_EXP_SECONDS:3600}
+    refresh-token-exp-seconds: ${JWT_REFRESH_EXP_SECONDS:5184000}
+    clock-skew-seconds: ${JWT_CLOCK_SKEW_SECONDS:30}
+
+app:
+  bootstrap-admin:
+    enabled: ${BOOTSTRAP_ADMIN_ENABLED:true}
+    username: ${BOOTSTRAP_ADMIN_USERNAME:admin}
+    password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    display-request-duration: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never

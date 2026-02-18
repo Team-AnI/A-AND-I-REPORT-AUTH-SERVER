@@ -1,0 +1,154 @@
+name: Deploy Tagged Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      APP_DIR: ${{ vars.APP_DIR || '/opt/auth' }}
+      POSTGRES_DB: ${{ vars.POSTGRES_DB || 'auth' }}
+      POSTGRES_USER: ${{ vars.POSTGRES_USER || 'auth' }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate tag format
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid tag: ${GITHUB_REF_NAME}"
+            echo "Expected format: vX.Y.Z"
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image URI
+        id: image
+        run: |
+          echo "uri=${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          docker build -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+
+      - name: Deploy on instance via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+          APP_DIR: ${{ env.APP_DIR }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          REDIS_PASSWORD: ${{ env.REDIS_PASSWORD }}
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          port: ${{ vars.AWS_PORT || '22' }}
+          envs: AWS_REGION,IMAGE_URI,APP_DIR,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,REDIS_PASSWORD
+          script: |
+            set -euo pipefail
+
+            ECR_REGISTRY="$(echo "${IMAGE_URI}" | cut -d'/' -f1)"
+            aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+
+            mkdir -p "${APP_DIR}"
+            cat <<'EOF' > "${APP_DIR}/docker-compose.yml"
+            services:
+              postgres:
+                image: postgres:16-alpine
+                container_name: auth-postgres
+                restart: always
+                environment:
+                  POSTGRES_DB: ${POSTGRES_DB}
+                  POSTGRES_USER: ${POSTGRES_USER}
+                  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+                volumes:
+                  - postgres_data:/var/lib/postgresql/data
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+
+              redis:
+                image: redis:7-alpine
+                container_name: auth-redis
+                restart: always
+                command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+                healthcheck:
+                  test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+
+              auth:
+                image: ${IMAGE_URI}
+                container_name: auth
+                restart: always
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                  redis:
+                    condition: service_healthy
+                ports:
+                  - "8080:8080"
+                environment:
+                  SPRING_PROFILES_ACTIVE: prod
+                  DB_R2DBC_URL: r2dbc:postgresql://postgres:5432/${POSTGRES_DB}
+                  DB_USERNAME: ${POSTGRES_USER}
+                  DB_PASSWORD: ${POSTGRES_PASSWORD}
+                  REDIS_HOST: redis
+                  REDIS_PORT: 6379
+                  REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+            volumes:
+              postgres_data:
+            EOF
+
+            cd "${APP_DIR}"
+            IMAGE_URI="${IMAGE_URI}" \
+            POSTGRES_DB="${POSTGRES_DB}" \
+            POSTGRES_USER="${POSTGRES_USER}" \
+            POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
+            REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            docker compose pull
+
+            IMAGE_URI="${IMAGE_URI}" \
+            POSTGRES_DB="${POSTGRES_DB}" \
+            POSTGRES_USER="${POSTGRES_USER}" \
+            POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
+            REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            docker compose up -d --remove-orphans
+
+            docker image prune -f --filter "until=72h"

@@ -1,0 +1,56 @@
+services:
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${AUTH_IMAGE:-aandiclub/auth:local}
+    container_name: auth
+    ports:
+      - "8080:8080"
+    environment:
+      DB_R2DBC_URL: r2dbc:postgresql://postgres:5432/auth
+      DB_USERNAME: auth
+      DB_PASSWORD: auth
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: change-this-secret-at-least-32-bytes-long
+      BOOTSTRAP_ADMIN_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: auth-postgres
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: auth
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth -d auth"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: auth-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+volumes:
+  pg_data:
+  redis_data:
