@@ -157,7 +157,9 @@ class AdminServiceImpl(
 		}
 
 		return userInviteRepository
-			.findFirstByUserIdAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(requireNotNull(user.id), now)
+			.findByUserIdOrderByCreatedAtDesc(requireNotNull(user.id))
+			.filter { it.usedAt == null && it.expiresAt.isAfter(now) }
+			.next()
 			.flatMap { invite ->
 				inviteTokenCacheService.findToken(invite.tokenHash)
 					.map { token ->

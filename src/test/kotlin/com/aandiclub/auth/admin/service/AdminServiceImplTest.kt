@@ -170,8 +170,8 @@ class AdminServiceImplTest : FunSpec({
 			),
 		)
 		every {
-			userInviteRepository.findFirstByUserIdAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(userId, any())
-		} returns Mono.just(invite)
+			userInviteRepository.findByUserIdOrderByCreatedAtDesc(userId)
+		} returns Flux.just(invite)
 		every { inviteTokenCacheService.findToken("invite-hash") } returns Mono.just("raw-token")
 
 		StepVerifier.create(service.getUsers())
@@ -202,8 +202,8 @@ class AdminServiceImplTest : FunSpec({
 			),
 		)
 		every {
-			userInviteRepository.findFirstByUserIdAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(any(), any())
-		} returns Mono.empty()
+			userInviteRepository.findByUserIdOrderByCreatedAtDesc(any())
+		} returns Flux.empty()
 
 		StepVerifier.create(service.getUsers())
 			.assertNext { users ->
