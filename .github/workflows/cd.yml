@@ -21,6 +21,7 @@ jobs:
       APP_DIR: ${{ vars.APP_DIR || '/opt/auth' }}
       POSTGRES_DB: ${{ vars.POSTGRES_DB || 'auth' }}
       POSTGRES_USER: ${{ vars.POSTGRES_USER || 'auth' }}
+      APP_OPENAPI_SERVER_URL: ${{ vars.APP_OPENAPI_SERVER_URL }}
       JWT_ISSUER: ${{ vars.JWT_ISSUER }}
       JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -41,6 +42,7 @@ jobs:
 
       - name: Validate required auth JWT config
         run: |
+          [[ -n "${APP_OPENAPI_SERVER_URL}" ]] || (echo "Missing vars.APP_OPENAPI_SERVER_URL" && exit 1)
           [[ -n "${JWT_ISSUER}" ]] || (echo "Missing vars.JWT_ISSUER" && exit 1)
           [[ -n "${JWT_AUDIENCE}" ]] || (echo "Missing vars.JWT_AUDIENCE" && exit 1)
           [[ -n "${JWT_SECRET}" ]] || (echo "Missing secrets.JWT_SECRET" && exit 1)
@@ -76,6 +78,7 @@ jobs:
           APP_DIR: ${{ env.APP_DIR }}
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
           POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          APP_OPENAPI_SERVER_URL: ${{ env.APP_OPENAPI_SERVER_URL }}
           JWT_ISSUER: ${{ env.JWT_ISSUER }}
           JWT_AUDIENCE: ${{ env.JWT_AUDIENCE }}
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
@@ -86,7 +89,7 @@ jobs:
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
           port: ${{ vars.AWS_PORT || '22' }}
-          envs: AWS_REGION,IMAGE_URI,APP_DIR,POSTGRES_DB,POSTGRES_USER,JWT_ISSUER,JWT_AUDIENCE,POSTGRES_PASSWORD,REDIS_PASSWORD,JWT_SECRET
+          envs: AWS_REGION,IMAGE_URI,APP_DIR,POSTGRES_DB,POSTGRES_USER,APP_OPENAPI_SERVER_URL,JWT_ISSUER,JWT_AUDIENCE,POSTGRES_PASSWORD,REDIS_PASSWORD,JWT_SECRET
           script: |
             set -euo pipefail
 
@@ -142,6 +145,7 @@ jobs:
                   REDIS_HOST: redis
                   REDIS_PORT: 6379
                   REDIS_PASSWORD: ${REDIS_PASSWORD}
+                  APP_OPENAPI_SERVER_URL: ${APP_OPENAPI_SERVER_URL}
                   JWT_ISSUER: ${JWT_ISSUER}
                   JWT_AUDIENCE: ${JWT_AUDIENCE}
                   JWT_SECRET: ${JWT_SECRET}
@@ -154,6 +158,7 @@ jobs:
             IMAGE_URI="${IMAGE_URI}" \
             POSTGRES_DB="${POSTGRES_DB}" \
             POSTGRES_USER="${POSTGRES_USER}" \
+            APP_OPENAPI_SERVER_URL="${APP_OPENAPI_SERVER_URL}" \
             JWT_ISSUER="${JWT_ISSUER}" \
             JWT_AUDIENCE="${JWT_AUDIENCE}" \
             POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
@@ -164,6 +169,7 @@ jobs:
             IMAGE_URI="${IMAGE_URI}" \
             POSTGRES_DB="${POSTGRES_DB}" \
             POSTGRES_USER="${POSTGRES_USER}" \
+            APP_OPENAPI_SERVER_URL="${APP_OPENAPI_SERVER_URL}" \
             JWT_ISSUER="${JWT_ISSUER}" \
             JWT_AUDIENCE="${JWT_AUDIENCE}" \
             POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
