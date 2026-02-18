@@ -37,6 +37,7 @@ docker compose up --build
   - `APP_DIR`: EC2 내 compose 배포 경로 (기본 `/opt/auth`)
   - `POSTGRES_DB`: 기본 `auth`
   - `POSTGRES_USER`: 기본 `auth`
+  - `APP_CORS_ALLOWED_ORIGINS`: 예) `https://aandiclub.com,https://admin.aandiclub.com,https://auth.aandiclub.com,https://api.aandiclub.com`
   - `JWT_ISSUER`: 예) `https://auth.aandiclub.com`
   - `JWT_AUDIENCE`: 예) `aandiclub-api`
   - `AWS_PORT`: 기본 `22` (옵션)
