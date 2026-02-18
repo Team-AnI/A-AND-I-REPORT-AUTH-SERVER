@@ -41,6 +41,9 @@ class UserRepositoryTest : FunSpec() {
 					"username" VARCHAR(64) NOT NULL UNIQUE,
 					"password_hash" VARCHAR(255) NOT NULL,
 					"role" VARCHAR(32) NOT NULL,
+					"force_password_change" BOOLEAN NOT NULL,
+					"is_active" BOOLEAN NOT NULL,
+					"last_login_at" TIMESTAMP NULL,
 					"created_at" TIMESTAMP NOT NULL,
 					"updated_at" TIMESTAMP NOT NULL
 				)

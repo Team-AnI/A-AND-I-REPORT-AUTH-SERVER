@@ -1,10 +1,16 @@
 package com.aandiclub.auth.admin.service
 
+import com.aandiclub.auth.admin.config.InviteProperties
+import com.aandiclub.auth.admin.domain.UserInviteEntity
+import com.aandiclub.auth.admin.invite.InviteTokenCacheService
 import com.aandiclub.auth.admin.password.CredentialGenerator
+import com.aandiclub.auth.admin.repository.UserInviteRepository
 import com.aandiclub.auth.admin.sequence.UsernameSequenceService
 import com.aandiclub.auth.admin.service.impl.AdminServiceImpl
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
+import com.aandiclub.auth.admin.web.dto.ProvisionType
 import com.aandiclub.auth.security.service.PasswordService
+import com.aandiclub.auth.security.token.TokenHashService
 import com.aandiclub.auth.user.domain.UserEntity
 import com.aandiclub.auth.user.domain.UserRole
 import com.aandiclub.auth.user.repository.UserRepository
@@ -16,27 +22,43 @@ import io.mockk.slot
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.test.StepVerifier
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 
 class AdminServiceImplTest : FunSpec({
 	val userRepository = mockk<UserRepository>()
+	val userInviteRepository = mockk<UserInviteRepository>()
+	val inviteTokenCacheService = mockk<InviteTokenCacheService>()
 	val usernameSequenceService = mockk<UsernameSequenceService>()
 	val credentialGenerator = mockk<CredentialGenerator>()
 	val passwordService = mockk<PasswordService>()
+	val tokenHashService = mockk<TokenHashService>()
+	val clock = Clock.fixed(Instant.parse("2026-02-18T00:00:00Z"), ZoneOffset.UTC)
 
 	val service = AdminServiceImpl(
 		userRepository = userRepository,
+		userInviteRepository = userInviteRepository,
+		inviteTokenCacheService = inviteTokenCacheService,
 		usernameSequenceService = usernameSequenceService,
 		credentialGenerator = credentialGenerator,
 		passwordService = passwordService,
+		tokenHashService = tokenHashService,
+		inviteProperties = InviteProperties(
+			activationBaseUrl = "https://your-domain.com/activate",
+			expirationHours = 72,
+		),
+		clock = clock,
 	)
 
-	test("createUser should generate user_XX and return one-time password") {
+	test("createUser PASSWORD should generate temporary password") {
 		val savedUser = UserEntity(
 			id = UUID.randomUUID(),
 			username = "user_01",
 			passwordHash = "hashed-password",
 			role = UserRole.USER,
+			forcePasswordChange = true,
 		)
 		val savedEntitySlot = slot<UserEntity>()
 
@@ -45,16 +67,119 @@ class AdminServiceImplTest : FunSpec({
 		every { passwordService.hash("A".repeat(32)) } returns "hashed-password"
 		every { userRepository.save(capture(savedEntitySlot)) } returns Mono.just(savedUser)
 
-		StepVerifier.create(service.createUser(CreateAdminUserRequest(role = UserRole.USER)))
+		StepVerifier.create(
+			service.createUser(
+				CreateAdminUserRequest(role = UserRole.USER, provisionType = ProvisionType.PASSWORD),
+			),
+		)
 			.assertNext { response ->
 				response.username shouldBe "user_01"
-				response.password shouldBe "A".repeat(32)
+				response.temporaryPassword shouldBe "A".repeat(32)
 				response.role shouldBe UserRole.USER
+				response.provisionType shouldBe ProvisionType.PASSWORD
 			}
 			.verifyComplete()
 
 		savedEntitySlot.captured.username shouldBe "user_01"
 		savedEntitySlot.captured.passwordHash shouldBe "hashed-password"
+		savedEntitySlot.captured.forcePasswordChange shouldBe true
+	}
+
+	test("createUser INVITE should return one-time invite link and inactive account") {
+		val userId = UUID.randomUUID()
+		val savedUser = UserEntity(
+			id = userId,
+			username = "user_02",
+			passwordHash = "placeholder-hash",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+		val savedUserSlot = slot<UserEntity>()
+		val inviteSlot = slot<UserInviteEntity>()
+
+		every { usernameSequenceService.nextSequence() } returns Mono.just(2)
+		every { credentialGenerator.randomToken(any()) } returns "invite-token"
+		every { tokenHashService.sha256Hex("invite-token") } returns "invite-hash"
+		every { credentialGenerator.randomPassword(32) } returns "B".repeat(32)
+		every { passwordService.hash("B".repeat(32)) } returns "placeholder-hash"
+		every { userRepository.save(capture(savedUserSlot)) } returns Mono.just(savedUser)
+		every { userInviteRepository.save(capture(inviteSlot)) } answers { Mono.just(firstArg()) }
+		every { inviteTokenCacheService.cacheToken("invite-hash", "invite-token", any()) } returns Mono.just(true)
+
+		StepVerifier.create(
+			service.createUser(
+				CreateAdminUserRequest(role = UserRole.USER, provisionType = ProvisionType.INVITE),
+			),
+		).assertNext { response ->
+			response.username shouldBe "user_02"
+			response.provisionType shouldBe ProvisionType.INVITE
+			response.inviteLink shouldBe "https://your-domain.com/activate?token=invite-token"
+			response.temporaryPassword shouldBe null
+		}.verifyComplete()
+
+		savedUserSlot.captured.isActive shouldBe false
+		savedUserSlot.captured.forcePasswordChange shouldBe true
+		inviteSlot.captured.userId shouldBe userId
+		inviteSlot.captured.tokenHash shouldBe "invite-hash"
+	}
+
+	test("resetPassword should set forcePasswordChange and return temporary password") {
+		val userId = UUID.randomUUID()
+		val user = UserEntity(
+			id = userId,
+			username = "user_03",
+			passwordHash = "old",
+			role = UserRole.USER,
+		)
+		val savedSlot = slot<UserEntity>()
+
+		every { userRepository.findById(userId) } returns Mono.just(user)
+		every { credentialGenerator.randomPassword(32) } returns "C".repeat(32)
+		every { passwordService.hash("C".repeat(32)) } returns "new-hash"
+		every { userRepository.save(capture(savedSlot)) } returns Mono.just(user.copy(passwordHash = "new-hash", forcePasswordChange = true))
+
+		StepVerifier.create(service.resetPassword(userId))
+			.assertNext { response ->
+				response.temporaryPassword shouldBe "C".repeat(32)
+			}
+			.verifyComplete()
+
+		savedSlot.captured.forcePasswordChange shouldBe true
+	}
+
+	test("getUsers should include inviteLink for inactive user with valid invite") {
+		val userId = UUID.randomUUID()
+		val now = Instant.parse("2026-02-18T00:00:00Z")
+		val invite = UserInviteEntity(
+			id = UUID.randomUUID(),
+			userId = userId,
+			tokenHash = "invite-hash",
+			expiresAt = now.plusSeconds(3600),
+			usedAt = null,
+			createdAt = now,
+		)
+		every { userRepository.findAll() } returns Flux.just(
+			UserEntity(
+				id = userId,
+				username = "user_10",
+				passwordHash = "h1",
+				role = UserRole.USER,
+				isActive = false,
+				forcePasswordChange = true,
+			),
+		)
+		every {
+			userInviteRepository.findFirstByUserIdAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(userId, any())
+		} returns Mono.just(invite)
+		every { inviteTokenCacheService.findToken("invite-hash") } returns Mono.just("raw-token")
+
+		StepVerifier.create(service.getUsers())
+			.assertNext { users ->
+				users.size shouldBe 1
+				users[0].inviteLink shouldBe "https://your-domain.com/activate?token=raw-token"
+			}
+			.verifyComplete()
 	}
 
 	test("getUsers should return summarized users") {
@@ -64,14 +189,21 @@ class AdminServiceImplTest : FunSpec({
 				username = "user_01",
 				passwordHash = "h1",
 				role = UserRole.USER,
+				isActive = true,
+				forcePasswordChange = false,
 			),
 			UserEntity(
 				id = UUID.randomUUID(),
 				username = "admin",
 				passwordHash = "h2",
 				role = UserRole.ADMIN,
+				isActive = true,
+				forcePasswordChange = false,
 			),
 		)
+		every {
+			userInviteRepository.findFirstByUserIdAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(any(), any())
+		} returns Mono.empty()
 
 		StepVerifier.create(service.getUsers())
 			.assertNext { users ->

@@ -43,6 +43,9 @@ app:
     enabled: ${BOOTSTRAP_ADMIN_ENABLED:true}
     username: ${BOOTSTRAP_ADMIN_USERNAME:admin}
     password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+  invite:
+    activation-base-url: ${APP_INVITE_ACTIVATION_BASE_URL:https://your-domain.com/activate}
+    expiration-hours: ${APP_INVITE_EXPIRATION_HOURS:72}
 
 springdoc:
   api-docs:

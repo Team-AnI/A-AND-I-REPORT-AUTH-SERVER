@@ -4,13 +4,16 @@ import com.aandiclub.auth.admin.service.AdminService
 import com.aandiclub.auth.admin.web.dto.AdminUserSummary
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserResponse
+import com.aandiclub.auth.admin.web.dto.ResetPasswordResponse
 import com.aandiclub.auth.common.api.ApiResponse
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import reactor.core.publisher.Mono
+import java.util.UUID
 
 @RestController
 @RequestMapping("/v1/admin")
@@ -27,4 +30,8 @@ class AdminController(
 	@PostMapping("/users")
 	fun createUser(@RequestBody request: CreateAdminUserRequest): Mono<ApiResponse<CreateAdminUserResponse>> =
 		adminService.createUser(request).map { ApiResponse.success(it) }
+
+	@PostMapping("/users/{id}/reset-password")
+	fun resetPassword(@PathVariable id: UUID): Mono<ApiResponse<ResetPasswordResponse>> =
+		adminService.resetPassword(id).map { ApiResponse.success(it) }
 }

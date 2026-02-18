@@ -1,6 +1,10 @@
 package com.aandiclub.auth.auth.service.impl
 
 import com.aandiclub.auth.auth.service.AuthService
+import com.aandiclub.auth.admin.invite.InviteTokenCacheService
+import com.aandiclub.auth.admin.repository.UserInviteRepository
+import com.aandiclub.auth.auth.web.dto.ActivateRequest
+import com.aandiclub.auth.auth.web.dto.ActivateResponse
 import com.aandiclub.auth.auth.web.dto.LoginRequest
 import com.aandiclub.auth.auth.web.dto.LoginResponse
 import com.aandiclub.auth.auth.web.dto.LoginUser
@@ -16,7 +20,9 @@ import com.aandiclub.auth.security.observability.SecurityTelemetry
 import com.aandiclub.auth.security.service.JwtService
 import com.aandiclub.auth.security.service.PasswordService
 import com.aandiclub.auth.security.token.RefreshTokenStateService
+import com.aandiclub.auth.security.token.TokenHashService
 import com.aandiclub.auth.user.repository.UserRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Mono
 import java.time.Clock
@@ -25,8 +31,11 @@ import java.time.Duration
 @Service
 class AuthServiceImpl(
 	private val userRepository: UserRepository,
+	private val userInviteRepository: UserInviteRepository,
+	private val inviteTokenCacheService: InviteTokenCacheService,
 	private val passwordService: PasswordService,
 	private val jwtService: JwtService,
+	private val tokenHashService: TokenHashService,
 	private val refreshTokenStateService: RefreshTokenStateService,
 	private val securityTelemetry: SecurityTelemetry = NoopSecurityTelemetry,
 	private val clock: Clock = Clock.systemUTC(),
@@ -35,24 +44,26 @@ class AuthServiceImpl(
 		userRepository.findByUsername(request.username)
 			.switchIfEmpty(Mono.defer { invalidCredentials(request.username) })
 			.flatMap { user ->
-				if (!passwordService.matches(request.password, user.passwordHash)) {
+				if (!user.isActive || !passwordService.matches(request.password, user.passwordHash)) {
 					invalidCredentials(request.username)
 				} else {
 					val accessToken = jwtService.issueAccessToken(requireNotNull(user.id), user.username, user.role)
 					val refreshToken = jwtService.issueRefreshToken(requireNotNull(user.id), user.username, user.role)
-					Mono.just(
+					val now = clock.instant()
+					userRepository.save(user.copy(lastLoginAt = now)).map {
 						LoginResponse(
 							accessToken = accessToken.value,
 							refreshToken = refreshToken.value,
 							expiresIn = Duration.between(clock.instant(), accessToken.expiresAt).seconds,
 							tokenType = "Bearer",
+							forcePasswordChange = user.forcePasswordChange,
 							user = LoginUser(
 								id = requireNotNull(user.id),
 								username = user.username,
 								role = user.role,
 							),
-						),
-					)
+						)
+					}
 				}
 			}
 
@@ -80,12 +91,48 @@ class AuthServiceImpl(
 		}
 	}
 
-	companion object {
-		private const val INVALID_CREDENTIALS_MESSAGE = "Invalid username or password."
+	override fun activate(request: ActivateRequest): Mono<ActivateResponse> {
+		return Mono.defer {
+			val tokenHash = tokenHashService.sha256Hex(request.token)
+			userInviteRepository.findByTokenHash(tokenHash)
+				.switchIfEmpty(invalidInviteToken())
+				.flatMap { invite ->
+					val now = clock.instant()
+					if (invite.usedAt != null || !invite.expiresAt.isAfter(now)) {
+						invalidInviteToken()
+					} else {
+						userRepository.findById(invite.userId)
+							.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
+							.flatMap { user ->
+								val updatedUser = user.copy(
+									passwordHash = passwordService.hash(request.password),
+									forcePasswordChange = false,
+									isActive = true,
+								)
+								userRepository.save(updatedUser)
+									.then(userInviteRepository.save(invite.copy(usedAt = now)))
+									.then(inviteTokenCacheService.deleteToken(invite.tokenHash))
+									.map {
+										logger.warn("security_audit event=invite_activated user_id={}", updatedUser.id)
+										ActivateResponse(success = true)
+									}
+							}
+					}
+				}
+		}
 	}
 
 	private fun invalidCredentials(username: String): Mono<Nothing> {
 		securityTelemetry.loginFailed(username)
 		return Mono.error(AppException(ErrorCode.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE))
+	}
+
+	private fun invalidInviteToken(): Mono<Nothing> =
+		Mono.error(AppException(ErrorCode.UNAUTHORIZED, INVALID_INVITE_TOKEN_MESSAGE))
+
+	companion object {
+		private const val INVALID_CREDENTIALS_MESSAGE = "Invalid username or password."
+		private const val INVALID_INVITE_TOKEN_MESSAGE = "Invalid or expired invite token."
+		private val logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
 	}
 }

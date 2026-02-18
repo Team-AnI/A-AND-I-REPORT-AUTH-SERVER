@@ -1,5 +1,7 @@
 package com.aandiclub.auth.auth.service
 
+import com.aandiclub.auth.auth.web.dto.ActivateRequest
+import com.aandiclub.auth.auth.web.dto.ActivateResponse
 import com.aandiclub.auth.auth.web.dto.LoginRequest
 import com.aandiclub.auth.auth.web.dto.LoginResponse
 import com.aandiclub.auth.auth.web.dto.LogoutRequest
@@ -12,4 +14,5 @@ interface AuthService {
 	fun login(request: LoginRequest): Mono<LoginResponse>
 	fun refresh(request: RefreshRequest): Mono<RefreshResponse>
 	fun logout(request: LogoutRequest): Mono<LogoutResponse>
+	fun activate(request: ActivateRequest): Mono<ActivateResponse>
 }

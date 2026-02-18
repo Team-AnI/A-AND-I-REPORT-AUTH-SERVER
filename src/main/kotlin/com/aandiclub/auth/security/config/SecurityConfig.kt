@@ -1,6 +1,7 @@
 package com.aandiclub.auth.security.config
 
 import com.aandiclub.auth.admin.config.BootstrapAdminProperties
+import com.aandiclub.auth.admin.config.InviteProperties
 import com.aandiclub.auth.security.auth.JwtReactiveAuthenticationManager
 import com.aandiclub.auth.security.filter.BearerTokenAuthenticationConverter
 import com.aandiclub.auth.security.jwt.JwtProperties
@@ -23,7 +24,12 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource
 
 @Configuration
 @EnableWebFluxSecurity
-@EnableConfigurationProperties(JwtProperties::class, BootstrapAdminProperties::class, AppCorsProperties::class)
+@EnableConfigurationProperties(
+	JwtProperties::class,
+	BootstrapAdminProperties::class,
+	AppCorsProperties::class,
+	InviteProperties::class,
+)
 class SecurityConfig {
 
 	@Bean
@@ -68,6 +74,7 @@ class SecurityConfig {
 				it.pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				it.pathMatchers(
 					"/v1/auth/**",
+					"/activate",
 					"/api/ping/**",
 					"/v3/api-docs/**",
 					"/swagger-ui.html",
@@ -75,7 +82,7 @@ class SecurityConfig {
 					"/actuator/health",
 					"/actuator/info",
 				).permitAll()
-				it.pathMatchers("/v1/me").hasAnyRole("USER", "ORGANIZER", "ADMIN")
+				it.pathMatchers("/v1/me", "/v1/me/**").hasAnyRole("USER", "ORGANIZER", "ADMIN")
 				it.pathMatchers("/v1/admin/**").hasRole("ADMIN")
 				it.anyExchange().authenticated()
 			}
