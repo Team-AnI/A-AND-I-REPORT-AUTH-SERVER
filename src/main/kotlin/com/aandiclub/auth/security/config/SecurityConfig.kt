@@ -5,6 +5,8 @@ import com.aandiclub.auth.admin.config.InviteProperties
 import com.aandiclub.auth.security.auth.JwtReactiveAuthenticationManager
 import com.aandiclub.auth.security.filter.BearerTokenAuthenticationConverter
 import com.aandiclub.auth.security.jwt.JwtProperties
+import com.aandiclub.auth.user.config.ProfileImageProperties
+import com.aandiclub.auth.user.config.ProfileProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -29,6 +31,8 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource
 	BootstrapAdminProperties::class,
 	AppCorsProperties::class,
 	InviteProperties::class,
+	ProfileProperties::class,
+	ProfileImageProperties::class,
 )
 class SecurityConfig {
 

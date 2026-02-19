@@ -6,6 +6,8 @@ CREATE TABLE users (
     force_password_change BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     last_login_at TIMESTAMP NULL,
+    nickname VARCHAR(40) NULL,
+    profile_image_url VARCHAR(2048) NULL,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );

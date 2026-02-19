@@ -46,6 +46,17 @@ app:
   invite:
     activation-base-url: ${APP_INVITE_ACTIVATION_BASE_URL:https://your-domain.com/activate}
     expiration-hours: ${APP_INVITE_EXPIRATION_HOURS:72}
+  profile:
+    allowed-image-hosts: ${APP_PROFILE_ALLOWED_IMAGE_HOSTS:}
+  profile-image:
+    enabled: ${APP_PROFILE_IMAGE_ENABLED:false}
+    bucket: ${APP_PROFILE_IMAGE_BUCKET:}
+    region: ${APP_PROFILE_IMAGE_REGION:ap-northeast-2}
+    key-prefix: ${APP_PROFILE_IMAGE_KEY_PREFIX:profiles}
+    public-base-url: ${APP_PROFILE_IMAGE_PUBLIC_BASE_URL:}
+    upload-url-expiration-seconds: ${APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS:600}
+    max-upload-bytes: ${APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES:5242880}
+    allowed-content-types: ${APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES:image/jpeg,image/png,image/webp}
 
 springdoc:
   api-docs:

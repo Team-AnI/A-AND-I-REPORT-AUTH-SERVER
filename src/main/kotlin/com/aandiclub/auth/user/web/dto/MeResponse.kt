@@ -7,4 +7,6 @@ data class MeResponse(
 	val id: UUID,
 	val username: String,
 	val role: UserRole,
+	val nickname: String? = null,
+	val profileImageUrl: String? = null,
 )

@@ -23,6 +23,10 @@ data class UserEntity(
 	val isActive: Boolean = true,
 	@Column("last_login_at")
 	val lastLoginAt: Instant? = null,
+	@Column("nickname")
+	val nickname: String? = null,
+	@Column("profile_image_url")
+	val profileImageUrl: String? = null,
 	@Column("created_at")
 	val createdAt: Instant = Instant.now(),
 	@Column("updated_at")
