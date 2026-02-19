@@ -9,7 +9,9 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.http.MediaType
+import org.springframework.core.io.ByteArrayResource
 import org.springframework.r2dbc.core.DatabaseClient
+import org.springframework.http.client.MultipartBodyBuilder
 import org.springframework.web.reactive.function.BodyInserters
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.reactive.server.WebTestClient
@@ -119,6 +121,31 @@ class AuthorizationMatrixTest : StringSpec() {
 				.expectBody()
 				.jsonPath("$.success").isEqualTo(true)
 				.jsonPath("$.data.nickname").isEqualTo("new profile")
+		}
+
+		"PATCH /v1/me with multipart file is parsed (not 415) and rejected by policy when upload disabled" {
+			val userId = UUID.randomUUID()
+			val username = "tester_profile_file"
+			insertUser(userId, username, UserRole.USER)
+			val token = accessToken(userId, username, UserRole.USER)
+
+			val multipart = MultipartBodyBuilder().apply {
+				part("nickname", "new profile")
+				part("profileImage", object : ByteArrayResource("fake-png".toByteArray()) {
+					override fun getFilename(): String = "avatar.png"
+				}).contentType(MediaType.IMAGE_PNG)
+			}.build()
+
+			webClient().patch()
+				.uri("/v1/me")
+				.headers { it.setBearerAuth(token) }
+				.contentType(MediaType.MULTIPART_FORM_DATA)
+				.body(BodyInserters.fromMultipartData(multipart))
+				.exchange()
+				.expectStatus().isForbidden
+				.expectBody()
+				.jsonPath("$.success").isEqualTo(false)
+				.jsonPath("$.error.code").isEqualTo("FORBIDDEN")
 		}
 
 		"GET /v1/admin/ping denies USER role" {

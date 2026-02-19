@@ -24,6 +24,9 @@ class OpenApiDocsTest : StringSpec() {
 				.expectStatus().isOk
 				.expectBody()
 				.jsonPath("$.openapi").exists()
+				.jsonPath("$.paths['/v1/me'].patch.requestBody.content['multipart/form-data'].schema.properties.nickname.type").isEqualTo("string")
+				.jsonPath("$.paths['/v1/me'].patch.requestBody.content['multipart/form-data'].schema.properties.profileImage.type").isEqualTo("string")
+				.jsonPath("$.paths['/v1/me'].patch.requestBody.content['multipart/form-data'].schema.properties.profileImage.format").isEqualTo("binary")
 		}
 
 		"GET /swagger-ui.html should be publicly accessible" {
