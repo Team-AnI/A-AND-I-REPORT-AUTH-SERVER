@@ -22,7 +22,7 @@ docker compose up --build
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 
 ## Profile Image Upload (S3 Presigned URL)
-- `PATCH /v1/me`를 `multipart/form-data`로 호출해 `nickname` + `profileImage`를 한 번에 처리
+- `POST /v1/me`를 `multipart/form-data`로 호출해 `nickname` + `profileImage`를 한 번에 처리
   - 서버가 이미지를 S3에 업로드한 뒤 사용자 프로필을 갱신
 - (옵션) `POST /v1/me/profile-image/upload-url` presigned 업로드 방식도 지원
 

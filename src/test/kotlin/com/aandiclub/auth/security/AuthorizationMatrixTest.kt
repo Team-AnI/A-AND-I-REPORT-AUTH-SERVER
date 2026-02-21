@@ -87,8 +87,8 @@ class AuthorizationMatrixTest : StringSpec() {
 				.jsonPath("$.data.role").isEqualTo("USER")
 		}
 
-		"PATCH /v1/me requires authentication" {
-			webClient().patch()
+		"POST /v1/me with multipart requires authentication" {
+			webClient().post()
 				.uri("/v1/me")
 				.contentType(MediaType.MULTIPART_FORM_DATA)
 				.body(BodyInserters.fromMultipartData("nickname", "new profile"))
@@ -114,13 +114,13 @@ class AuthorizationMatrixTest : StringSpec() {
 				.expectStatus().isUnauthorized
 		}
 
-		"PATCH /v1/me allows USER role" {
+		"POST /v1/me with multipart allows USER role" {
 			val userId = UUID.randomUUID()
 			val username = "tester_profile"
 			insertUser(userId, username, UserRole.USER)
 			val token = accessToken(userId, username, UserRole.USER)
 
-			webClient().patch()
+			webClient().post()
 				.uri("/v1/me")
 				.headers { it.setBearerAuth(token) }
 				.contentType(MediaType.MULTIPART_FORM_DATA)
@@ -150,7 +150,7 @@ class AuthorizationMatrixTest : StringSpec() {
 				.jsonPath("$.data.nickname").isEqualTo("new profile")
 		}
 
-		"PATCH /v1/me with multipart file is parsed (not 415) and rejected by policy when upload disabled" {
+		"POST /v1/me with multipart file is parsed (not 415) and rejected by policy when upload disabled" {
 			val userId = UUID.randomUUID()
 			val username = "tester_profile_file"
 			insertUser(userId, username, UserRole.USER)
@@ -163,7 +163,7 @@ class AuthorizationMatrixTest : StringSpec() {
 				}).contentType(MediaType.IMAGE_PNG)
 			}.build()
 
-			webClient().patch()
+			webClient().post()
 				.uri("/v1/me")
 				.headers { it.setBearerAuth(token) }
 				.contentType(MediaType.MULTIPART_FORM_DATA)

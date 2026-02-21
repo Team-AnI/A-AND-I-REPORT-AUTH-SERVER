@@ -1,6 +1,8 @@
 package com.aandiclub.auth.user.web
 
 import com.aandiclub.auth.common.api.ApiResponse
+import com.aandiclub.auth.common.error.AppException
+import com.aandiclub.auth.common.error.ErrorCode
 import com.aandiclub.auth.security.auth.AuthenticatedUser
 import com.aandiclub.auth.user.service.UserService
 import com.aandiclub.auth.user.web.dto.ChangePasswordRequest
@@ -12,6 +14,8 @@ import com.aandiclub.auth.user.web.dto.UpdateProfileRequest
 import jakarta.validation.Valid
 import org.springframework.http.MediaType
 import org.springframework.http.codec.multipart.FilePart
+import org.springframework.http.codec.multipart.FormFieldPart
+import org.springframework.http.codec.multipart.Part
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -31,14 +35,20 @@ class UserController(
 	fun me(@AuthenticationPrincipal user: AuthenticatedUser): Mono<ApiResponse<MeResponse>> =
 		userService.getMe(user).map { ApiResponse.success(it) }
 
-	@PatchMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+	@PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
 	fun updateProfile(
 		@AuthenticationPrincipal user: AuthenticatedUser,
-		@RequestPart("nickname", required = false) nickname: String?,
+		@RequestPart("nickname", required = false) nickname: Part?,
 		@RequestPart("profileImage", required = false) profileImage: FilePart?,
-	): Mono<ApiResponse<MeResponse>> =
-		userService.updateProfile(user, nickname, profileImage)
+	): Mono<ApiResponse<MeResponse>> {
+		val nicknameValue = when (nickname) {
+			null -> null
+			is FormFieldPart -> nickname.value()
+			else -> return Mono.error(AppException(ErrorCode.INVALID_REQUEST, "nickname must be a text form field."))
+		}
+		return userService.updateProfile(user, nicknameValue, profileImage)
 			.map { ApiResponse.success(it) }
+	}
 
 	@PatchMapping(consumes = [MediaType.APPLICATION_JSON_VALUE])
 	fun updateProfileAsJson(
