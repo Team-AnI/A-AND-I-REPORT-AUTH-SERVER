@@ -24,6 +24,7 @@ class OpenApiDocsTest : StringSpec() {
 				.expectStatus().isOk
 				.expectBody()
 				.jsonPath("$.openapi").exists()
+				.jsonPath("$.paths['/v1/me'].post.requestBody.content['multipart/form-data']").exists()
 		}
 
 		"GET /swagger-ui.html should be publicly accessible" {

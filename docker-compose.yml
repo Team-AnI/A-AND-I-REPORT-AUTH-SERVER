@@ -9,11 +9,14 @@ services:
       - "8080:8080"
     environment:
       DB_R2DBC_URL: r2dbc:postgresql://postgres:5432/auth
+      DB_JDBC_URL: jdbc:postgresql://postgres:5432/auth
       DB_USERNAME: auth
       DB_PASSWORD: auth
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: change-this-secret-at-least-32-bytes-long
+      JWT_ISSUER: ${JWT_ISSUER:?JWT_ISSUER must be set}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:?JWT_AUDIENCE must be set}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       BOOTSTRAP_ADMIN_ENABLED: "false"
     depends_on:
       postgres:

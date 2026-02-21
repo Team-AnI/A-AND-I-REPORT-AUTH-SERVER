@@ -17,6 +17,16 @@ data class UserEntity(
 	val passwordHash: String,
 	@Column("role")
 	val role: UserRole,
+	@Column("force_password_change")
+	val forcePasswordChange: Boolean = false,
+	@Column("is_active")
+	val isActive: Boolean = true,
+	@Column("last_login_at")
+	val lastLoginAt: Instant? = null,
+	@Column("nickname")
+	val nickname: String? = null,
+	@Column("profile_image_url")
+	val profileImageUrl: String? = null,
 	@Column("created_at")
 	val createdAt: Instant = Instant.now(),
 	@Column("updated_at")

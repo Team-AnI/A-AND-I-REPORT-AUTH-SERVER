@@ -8,10 +8,24 @@ import io.kotest.extensions.spring.SpringExtension
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
+import org.springframework.http.MediaType
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.r2dbc.core.DatabaseClient
+import org.springframework.http.client.MultipartBodyBuilder
+import org.springframework.web.reactive.function.BodyInserters
+import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.reactive.server.WebTestClient
+import java.time.Instant
 import java.util.UUID
 
 @SpringBootTest
+@TestPropertySource(
+	properties = [
+		"spring.r2dbc.url=r2dbc:h2:mem:///authzdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL",
+		"spring.r2dbc.username=sa",
+		"spring.r2dbc.password=",
+	],
+)
 class AuthorizationMatrixTest : StringSpec() {
 
 	@Autowired
@@ -20,9 +34,36 @@ class AuthorizationMatrixTest : StringSpec() {
 	@Autowired
 	private lateinit var jwtService: JwtService
 
+	@Autowired
+	private lateinit var databaseClient: DatabaseClient
+
 	override fun extensions(): List<Extension> = listOf(SpringExtension)
 
 	init {
+		beforeSpec {
+			databaseClient.sql(
+				"""
+				CREATE TABLE IF NOT EXISTS "users" (
+					"id" UUID PRIMARY KEY,
+					"username" VARCHAR(64) NOT NULL UNIQUE,
+					"password_hash" VARCHAR(255) NOT NULL,
+					"role" VARCHAR(32) NOT NULL,
+					"force_password_change" BOOLEAN NOT NULL DEFAULT FALSE,
+					"is_active" BOOLEAN NOT NULL DEFAULT TRUE,
+					"last_login_at" TIMESTAMP NULL,
+					"nickname" VARCHAR(40) NULL,
+					"profile_image_url" VARCHAR(2048) NULL,
+					"created_at" TIMESTAMP NOT NULL,
+					"updated_at" TIMESTAMP NOT NULL
+				)
+				""".trimIndent(),
+			).fetch().rowsUpdated().block()
+		}
+
+		beforeTest {
+			databaseClient.sql("""DELETE FROM "users"""").fetch().rowsUpdated().block()
+		}
+
 		"GET /v1/me requires authentication" {
 			webClient().get()
 				.uri("/v1/me")
@@ -31,7 +72,10 @@ class AuthorizationMatrixTest : StringSpec() {
 		}
 
 		"GET /v1/me allows USER role" {
-			val token = accessToken(UserRole.USER)
+			val userId = UUID.randomUUID()
+			val username = "tester_user"
+			insertUser(userId, username, UserRole.USER)
+			val token = accessToken(userId, username, UserRole.USER)
 			webClient().get()
 				.uri("/v1/me")
 				.headers { it.setBearerAuth(token) }
@@ -39,11 +83,100 @@ class AuthorizationMatrixTest : StringSpec() {
 				.expectStatus().isOk
 				.expectBody()
 				.jsonPath("$.success").isEqualTo(true)
+				.jsonPath("$.data.username").isEqualTo(username)
 				.jsonPath("$.data.role").isEqualTo("USER")
 		}
 
+		"POST /v1/me with multipart requires authentication" {
+			webClient().post()
+				.uri("/v1/me")
+				.contentType(MediaType.MULTIPART_FORM_DATA)
+				.body(BodyInserters.fromMultipartData("nickname", "new profile"))
+				.exchange()
+				.expectStatus().isUnauthorized
+		}
+
+		"PATCH /v1/me with json requires authentication" {
+			webClient().patch()
+				.uri("/v1/me")
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue("""{"nickname":"new profile"}""")
+				.exchange()
+				.expectStatus().isUnauthorized
+		}
+
+		"POST /v1/me/profile-image/upload-url requires authentication" {
+			webClient().post()
+				.uri("/v1/me/profile-image/upload-url")
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue("""{"contentType":"image/png","fileName":"avatar.png"}""")
+				.exchange()
+				.expectStatus().isUnauthorized
+		}
+
+		"POST /v1/me with multipart allows USER role" {
+			val userId = UUID.randomUUID()
+			val username = "tester_profile"
+			insertUser(userId, username, UserRole.USER)
+			val token = accessToken(userId, username, UserRole.USER)
+
+			webClient().post()
+				.uri("/v1/me")
+				.headers { it.setBearerAuth(token) }
+				.contentType(MediaType.MULTIPART_FORM_DATA)
+				.body(BodyInserters.fromMultipartData("nickname", "new profile"))
+				.exchange()
+				.expectStatus().isOk
+				.expectBody()
+				.jsonPath("$.success").isEqualTo(true)
+				.jsonPath("$.data.nickname").isEqualTo("new profile")
+		}
+
+		"PATCH /v1/me with json allows USER role" {
+			val userId = UUID.randomUUID()
+			val username = "tester_profile_json"
+			insertUser(userId, username, UserRole.USER)
+			val token = accessToken(userId, username, UserRole.USER)
+
+			webClient().patch()
+				.uri("/v1/me")
+				.headers { it.setBearerAuth(token) }
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue("""{"nickname":"new profile"}""")
+				.exchange()
+				.expectStatus().isOk
+				.expectBody()
+				.jsonPath("$.success").isEqualTo(true)
+				.jsonPath("$.data.nickname").isEqualTo("new profile")
+		}
+
+		"POST /v1/me with multipart file is parsed (not 415) and rejected by policy when upload disabled" {
+			val userId = UUID.randomUUID()
+			val username = "tester_profile_file"
+			insertUser(userId, username, UserRole.USER)
+			val token = accessToken(userId, username, UserRole.USER)
+
+			val multipart = MultipartBodyBuilder().apply {
+				part("nickname", "new profile")
+				part("profileImage", object : ByteArrayResource("fake-png".toByteArray()) {
+					override fun getFilename(): String = "avatar.png"
+				}).contentType(MediaType.IMAGE_PNG)
+			}.build()
+
+			webClient().post()
+				.uri("/v1/me")
+				.headers { it.setBearerAuth(token) }
+				.contentType(MediaType.MULTIPART_FORM_DATA)
+				.body(BodyInserters.fromMultipartData(multipart))
+				.exchange()
+				.expectStatus().isForbidden
+				.expectBody()
+				.jsonPath("$.success").isEqualTo(false)
+				.jsonPath("$.error.code").isEqualTo("FORBIDDEN")
+		}
+
 		"GET /v1/admin/ping denies USER role" {
-			val token = accessToken(UserRole.USER)
+			val token = accessToken(UUID.randomUUID(), "tester_user_denied", UserRole.USER)
 			webClient().get()
 				.uri("/v1/admin/ping")
 				.headers { it.setBearerAuth(token) }
@@ -52,7 +185,7 @@ class AuthorizationMatrixTest : StringSpec() {
 		}
 
 		"GET /v1/admin/ping denies ORGANIZER role" {
-			val token = accessToken(UserRole.ORGANIZER)
+			val token = accessToken(UUID.randomUUID(), "tester_organizer_denied", UserRole.ORGANIZER)
 			webClient().get()
 				.uri("/v1/admin/ping")
 				.headers { it.setBearerAuth(token) }
@@ -61,7 +194,7 @@ class AuthorizationMatrixTest : StringSpec() {
 		}
 
 		"GET /v1/admin/ping allows ADMIN role" {
-			val token = accessToken(UserRole.ADMIN)
+			val token = accessToken(UUID.randomUUID(), "tester_admin", UserRole.ADMIN)
 			webClient().get()
 				.uri("/v1/admin/ping")
 				.headers { it.setBearerAuth(token) }
@@ -75,6 +208,52 @@ class AuthorizationMatrixTest : StringSpec() {
 
 	private fun webClient(): WebTestClient = WebTestClient.bindToApplicationContext(applicationContext).build()
 
-	private fun accessToken(role: UserRole): String =
-		jwtService.issueAccessToken(UUID.randomUUID(), "tester_${role.name.lowercase()}", role).value
+	private fun accessToken(userId: UUID, username: String, role: UserRole): String =
+		jwtService.issueAccessToken(userId, username, role).value
+
+	private fun insertUser(userId: UUID, username: String, role: UserRole) {
+		databaseClient.sql(
+			"""
+			INSERT INTO "users" (
+				"id",
+				"username",
+				"password_hash",
+				"role",
+				"force_password_change",
+				"is_active",
+				"last_login_at",
+				"nickname",
+				"profile_image_url",
+				"created_at",
+				"updated_at"
+			) VALUES (
+				:userId,
+				:username,
+				:passwordHash,
+				:role,
+				:forcePasswordChange,
+				:isActive,
+				:lastLoginAt,
+				:nickname,
+				:profileImageUrl,
+				:createdAt,
+				:updatedAt
+			)
+			""".trimIndent(),
+		)
+			.bind("userId", userId)
+			.bind("username", username)
+			.bind("passwordHash", "hash")
+			.bind("role", role.name)
+			.bind("forcePasswordChange", false)
+			.bind("isActive", true)
+			.bindNull("lastLoginAt", Instant::class.java)
+			.bindNull("nickname", String::class.java)
+			.bindNull("profileImageUrl", String::class.java)
+			.bind("createdAt", Instant.now())
+			.bind("updatedAt", Instant.now())
+			.fetch()
+			.rowsUpdated()
+			.block()
+	}
 }

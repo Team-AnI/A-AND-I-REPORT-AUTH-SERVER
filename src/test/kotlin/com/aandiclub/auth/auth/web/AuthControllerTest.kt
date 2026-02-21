@@ -30,6 +30,7 @@ class AuthControllerTest : FunSpec({
 				refreshToken = "refresh",
 				expiresIn = 3600,
 				tokenType = "Bearer",
+				forcePasswordChange = false,
 				user = LoginUser(UUID.randomUUID(), "user_01", UserRole.USER),
 			),
 		)

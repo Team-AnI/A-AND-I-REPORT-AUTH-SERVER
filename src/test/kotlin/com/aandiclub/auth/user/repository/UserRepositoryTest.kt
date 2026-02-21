@@ -41,6 +41,11 @@ class UserRepositoryTest : FunSpec() {
 					"username" VARCHAR(64) NOT NULL UNIQUE,
 					"password_hash" VARCHAR(255) NOT NULL,
 					"role" VARCHAR(32) NOT NULL,
+					"force_password_change" BOOLEAN NOT NULL,
+					"is_active" BOOLEAN NOT NULL,
+					"last_login_at" TIMESTAMP NULL,
+					"nickname" VARCHAR(40) NULL,
+					"profile_image_url" VARCHAR(2048) NULL,
 					"created_at" TIMESTAMP NOT NULL,
 					"updated_at" TIMESTAMP NOT NULL
 				)
@@ -104,6 +109,27 @@ class UserRepositoryTest : FunSpec() {
 			StepVerifier.create(duplicate)
 				.expectError(DataIntegrityViolationException::class.java)
 				.verify()
+		}
+
+		test("save should persist profile fields") {
+			val saved = userRepository.save(
+				UserEntity(
+					username = "user_profile",
+					passwordHash = "hashed-password",
+					role = UserRole.USER,
+					nickname = "홍길동",
+					profileImageUrl = "https://cdn.example.com/profile/user_profile.png",
+					createdAt = Instant.now(),
+					updatedAt = Instant.now(),
+				),
+			)
+
+			StepVerifier.create(saved)
+				.assertNext { user ->
+					user.nickname shouldBe "홍길동"
+					user.profileImageUrl shouldBe "https://cdn.example.com/profile/user_profile.png"
+				}
+				.verifyComplete()
 		}
 	}
 }

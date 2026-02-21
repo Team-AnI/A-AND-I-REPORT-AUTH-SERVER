@@ -9,7 +9,6 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -22,8 +21,26 @@ jobs:
       APP_DIR: ${{ vars.APP_DIR || '/opt/auth' }}
       POSTGRES_DB: ${{ vars.POSTGRES_DB || 'auth' }}
       POSTGRES_USER: ${{ vars.POSTGRES_USER || 'auth' }}
+      BOOTSTRAP_ADMIN_ENABLED: ${{ vars.BOOTSTRAP_ADMIN_ENABLED || 'true' }}
+      APP_CORS_ALLOWED_ORIGINS: ${{ vars.APP_CORS_ALLOWED_ORIGINS || 'https://aandiclub.com,https://admin.aandiclub.com,https://auth.aandiclub.com,https://api.aandiclub.com' }}
+      APP_PROFILE_ALLOWED_IMAGE_HOSTS: ${{ vars.APP_PROFILE_ALLOWED_IMAGE_HOSTS || '' }}
+      APP_PROFILE_IMAGE_ENABLED: ${{ vars.APP_PROFILE_IMAGE_ENABLED || 'false' }}
+      APP_PROFILE_IMAGE_BUCKET: ${{ vars.APP_PROFILE_IMAGE_BUCKET || '' }}
+      APP_PROFILE_IMAGE_REGION: ${{ vars.APP_PROFILE_IMAGE_REGION || 'ap-northeast-2' }}
+      APP_PROFILE_IMAGE_KEY_PREFIX: ${{ vars.APP_PROFILE_IMAGE_KEY_PREFIX || 'profiles' }}
+      APP_PROFILE_IMAGE_PUBLIC_BASE_URL: ${{ vars.APP_PROFILE_IMAGE_PUBLIC_BASE_URL || '' }}
+      APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS: ${{ vars.APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS || '600' }}
+      APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES: ${{ vars.APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES || '5242880' }}
+      APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES: ${{ vars.APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES || 'image/jpeg,image/png,image/webp' }}
+      APP_INVITE_ACTIVATION_BASE_URL: ${{ vars.APP_INVITE_ACTIVATION_BASE_URL || 'https://aandiclub.com/activate' }}
+      APP_INVITE_EXPIRATION_HOURS: ${{ vars.APP_INVITE_EXPIRATION_HOURS || '72' }}
+      JWT_ISSUER: ${{ vars.JWT_ISSUER }}
+      JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.BOOTSTRAP_ADMIN_PASSWORD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      APP_OPENAPI_SERVER_URL: ${{ vars.APP_OPENAPI_SERVER_URL }}
 
     steps:
       - name: Checkout
@@ -35,6 +52,19 @@ jobs:
             echo "Invalid tag: ${GITHUB_REF_NAME}"
             echo "Expected format: vX.Y.Z"
             exit 1
+          fi
+
+      - name: Validate required auth JWT config
+        run: |
+          [[ -n "${JWT_ISSUER}" ]] || (echo "Missing vars.JWT_ISSUER" && exit 1)
+          [[ -n "${JWT_AUDIENCE}" ]] || (echo "Missing vars.JWT_AUDIENCE" && exit 1)
+          [[ -n "${JWT_SECRET}" ]] || (echo "Missing secrets.JWT_SECRET" && exit 1)
+          if [[ "${APP_PROFILE_IMAGE_ENABLED}" == "true" ]]; then
+            [[ -n "${APP_PROFILE_IMAGE_BUCKET}" ]] || (echo "Missing vars.APP_PROFILE_IMAGE_BUCKET" && exit 1)
+            [[ -n "${APP_PROFILE_ALLOWED_IMAGE_HOSTS}" ]] || (echo "Missing vars.APP_PROFILE_ALLOWED_IMAGE_HOSTS" && exit 1)
+          fi
+          if [[ "${BOOTSTRAP_ADMIN_ENABLED}" == "true" ]]; then
+            [[ -n "${BOOTSTRAP_ADMIN_PASSWORD}" ]] || (echo "Missing secrets.BOOTSTRAP_ADMIN_PASSWORD" && exit 1)
           fi
 
       - name: Configure AWS credentials
@@ -68,14 +98,32 @@ jobs:
           APP_DIR: ${{ env.APP_DIR }}
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
           POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          BOOTSTRAP_ADMIN_ENABLED: ${{ env.BOOTSTRAP_ADMIN_ENABLED }}
+          APP_CORS_ALLOWED_ORIGINS: ${{ env.APP_CORS_ALLOWED_ORIGINS }}
+          APP_PROFILE_ALLOWED_IMAGE_HOSTS: ${{ env.APP_PROFILE_ALLOWED_IMAGE_HOSTS }}
+          APP_PROFILE_IMAGE_ENABLED: ${{ env.APP_PROFILE_IMAGE_ENABLED }}
+          APP_PROFILE_IMAGE_BUCKET: ${{ env.APP_PROFILE_IMAGE_BUCKET }}
+          APP_PROFILE_IMAGE_REGION: ${{ env.APP_PROFILE_IMAGE_REGION }}
+          APP_PROFILE_IMAGE_KEY_PREFIX: ${{ env.APP_PROFILE_IMAGE_KEY_PREFIX }}
+          APP_PROFILE_IMAGE_PUBLIC_BASE_URL: ${{ env.APP_PROFILE_IMAGE_PUBLIC_BASE_URL }}
+          APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS: ${{ env.APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS }}
+          APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES: ${{ env.APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES }}
+          APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES: ${{ env.APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES }}
+          APP_INVITE_ACTIVATION_BASE_URL: ${{ env.APP_INVITE_ACTIVATION_BASE_URL }}
+          APP_INVITE_EXPIRATION_HOURS: ${{ env.APP_INVITE_EXPIRATION_HOURS }}
+          JWT_ISSUER: ${{ env.JWT_ISSUER }}
+          JWT_AUDIENCE: ${{ env.JWT_AUDIENCE }}
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
           REDIS_PASSWORD: ${{ env.REDIS_PASSWORD }}
+          BOOTSTRAP_ADMIN_PASSWORD: ${{ env.BOOTSTRAP_ADMIN_PASSWORD }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          APP_OPENAPI_SERVER_URL: ${{ env.APP_OPENAPI_SERVER_URL }}
         with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
           port: ${{ vars.AWS_PORT || '22' }}
-          envs: AWS_REGION,IMAGE_URI,APP_DIR,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,REDIS_PASSWORD
+          envs: AWS_REGION,IMAGE_URI,APP_DIR,POSTGRES_DB,POSTGRES_USER,BOOTSTRAP_ADMIN_ENABLED,APP_CORS_ALLOWED_ORIGINS,APP_PROFILE_ALLOWED_IMAGE_HOSTS,APP_PROFILE_IMAGE_ENABLED,APP_PROFILE_IMAGE_BUCKET,APP_PROFILE_IMAGE_REGION,APP_PROFILE_IMAGE_KEY_PREFIX,APP_PROFILE_IMAGE_PUBLIC_BASE_URL,APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS,APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES,APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES,APP_INVITE_ACTIVATION_BASE_URL,APP_INVITE_EXPIRATION_HOURS,JWT_ISSUER,JWT_AUDIENCE,POSTGRES_PASSWORD,REDIS_PASSWORD,BOOTSTRAP_ADMIN_PASSWORD,JWT_SECRET,APP_OPENAPI_SERVER_URL
           script: |
             set -euo pipefail
 
@@ -126,11 +174,30 @@ jobs:
                 environment:
                   SPRING_PROFILES_ACTIVE: prod
                   DB_R2DBC_URL: r2dbc:postgresql://postgres:5432/${POSTGRES_DB}
+                  DB_JDBC_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
                   DB_USERNAME: ${POSTGRES_USER}
                   DB_PASSWORD: ${POSTGRES_PASSWORD}
                   REDIS_HOST: redis
                   REDIS_PORT: 6379
                   REDIS_PASSWORD: ${REDIS_PASSWORD}
+                  BOOTSTRAP_ADMIN_ENABLED: ${BOOTSTRAP_ADMIN_ENABLED}
+                  BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
+                  APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+                  APP_PROFILE_ALLOWED_IMAGE_HOSTS: ${APP_PROFILE_ALLOWED_IMAGE_HOSTS}
+                  APP_PROFILE_IMAGE_ENABLED: ${APP_PROFILE_IMAGE_ENABLED}
+                  APP_PROFILE_IMAGE_BUCKET: ${APP_PROFILE_IMAGE_BUCKET}
+                  APP_PROFILE_IMAGE_REGION: ${APP_PROFILE_IMAGE_REGION}
+                  APP_PROFILE_IMAGE_KEY_PREFIX: ${APP_PROFILE_IMAGE_KEY_PREFIX}
+                  APP_PROFILE_IMAGE_PUBLIC_BASE_URL: ${APP_PROFILE_IMAGE_PUBLIC_BASE_URL}
+                  APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS: ${APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS}
+                  APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES: ${APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES}
+                  APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES: ${APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES}
+                  APP_INVITE_ACTIVATION_BASE_URL: ${APP_INVITE_ACTIVATION_BASE_URL}
+                  APP_INVITE_EXPIRATION_HOURS: ${APP_INVITE_EXPIRATION_HOURS}
+                  JWT_ISSUER: ${JWT_ISSUER}
+                  JWT_AUDIENCE: ${JWT_AUDIENCE}
+                  JWT_SECRET: ${JWT_SECRET}
+                  APP_OPENAPI_SERVER_URL: ${APP_OPENAPI_SERVER_URL}
 
             volumes:
               postgres_data:
@@ -140,8 +207,26 @@ jobs:
             IMAGE_URI="${IMAGE_URI}" \
             POSTGRES_DB="${POSTGRES_DB}" \
             POSTGRES_USER="${POSTGRES_USER}" \
+            BOOTSTRAP_ADMIN_ENABLED="${BOOTSTRAP_ADMIN_ENABLED}" \
+            APP_CORS_ALLOWED_ORIGINS="${APP_CORS_ALLOWED_ORIGINS}" \
+            APP_PROFILE_ALLOWED_IMAGE_HOSTS="${APP_PROFILE_ALLOWED_IMAGE_HOSTS}" \
+            APP_PROFILE_IMAGE_ENABLED="${APP_PROFILE_IMAGE_ENABLED}" \
+            APP_PROFILE_IMAGE_BUCKET="${APP_PROFILE_IMAGE_BUCKET}" \
+            APP_PROFILE_IMAGE_REGION="${APP_PROFILE_IMAGE_REGION}" \
+            APP_PROFILE_IMAGE_KEY_PREFIX="${APP_PROFILE_IMAGE_KEY_PREFIX}" \
+            APP_PROFILE_IMAGE_PUBLIC_BASE_URL="${APP_PROFILE_IMAGE_PUBLIC_BASE_URL}" \
+            APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS="${APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS}" \
+            APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES="${APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES}" \
+            APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES="${APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES}" \
+            APP_INVITE_ACTIVATION_BASE_URL="${APP_INVITE_ACTIVATION_BASE_URL}" \
+            APP_INVITE_EXPIRATION_HOURS="${APP_INVITE_EXPIRATION_HOURS}" \
+            JWT_ISSUER="${JWT_ISSUER}" \
+            JWT_AUDIENCE="${JWT_AUDIENCE}" \
             POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
             REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD}" \
+            JWT_SECRET="${JWT_SECRET}" \
+            APP_OPENAPI_SERVER_URL="${APP_OPENAPI_SERVER_URL}" \
             docker compose pull
 
             IMAGE_URI="${IMAGE_URI}" \
@@ -149,6 +234,65 @@ jobs:
             POSTGRES_USER="${POSTGRES_USER}" \
             POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
             REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            docker compose up -d postgres redis
+
+            # Guarantee required schema exists before auth startup.
+            docker exec -i auth-postgres psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" <<'SQL'
+            CREATE TABLE IF NOT EXISTS users (
+              id UUID PRIMARY KEY,
+              username VARCHAR(64) NOT NULL UNIQUE,
+              password_hash VARCHAR(255) NOT NULL,
+              role VARCHAR(32) NOT NULL,
+              force_password_change BOOLEAN NOT NULL DEFAULT FALSE,
+              is_active BOOLEAN NOT NULL DEFAULT TRUE,
+              last_login_at TIMESTAMP NULL,
+              created_at TIMESTAMP NOT NULL,
+              updated_at TIMESTAMP NOT NULL
+            );
+            ALTER TABLE users
+              ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE,
+              ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+              ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP NULL,
+              ADD COLUMN IF NOT EXISTS nickname VARCHAR(40) NULL,
+              ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR(2048) NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users (username);
+
+            CREATE TABLE IF NOT EXISTS user_invites (
+              id UUID PRIMARY KEY,
+              user_id UUID NOT NULL,
+              token_hash VARCHAR(128) NOT NULL UNIQUE,
+              expires_at TIMESTAMP NOT NULL,
+              used_at TIMESTAMP NULL,
+              created_at TIMESTAMP NOT NULL,
+              CONSTRAINT fk_user_invites_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS ix_user_invites_user_id ON user_invites (user_id);
+            CREATE INDEX IF NOT EXISTS ix_user_invites_expires_at ON user_invites (expires_at);
+            SQL
+
+            IMAGE_URI="${IMAGE_URI}" \
+            POSTGRES_DB="${POSTGRES_DB}" \
+            POSTGRES_USER="${POSTGRES_USER}" \
+            BOOTSTRAP_ADMIN_ENABLED="${BOOTSTRAP_ADMIN_ENABLED}" \
+            APP_CORS_ALLOWED_ORIGINS="${APP_CORS_ALLOWED_ORIGINS}" \
+            APP_PROFILE_ALLOWED_IMAGE_HOSTS="${APP_PROFILE_ALLOWED_IMAGE_HOSTS}" \
+            APP_PROFILE_IMAGE_ENABLED="${APP_PROFILE_IMAGE_ENABLED}" \
+            APP_PROFILE_IMAGE_BUCKET="${APP_PROFILE_IMAGE_BUCKET}" \
+            APP_PROFILE_IMAGE_REGION="${APP_PROFILE_IMAGE_REGION}" \
+            APP_PROFILE_IMAGE_KEY_PREFIX="${APP_PROFILE_IMAGE_KEY_PREFIX}" \
+            APP_PROFILE_IMAGE_PUBLIC_BASE_URL="${APP_PROFILE_IMAGE_PUBLIC_BASE_URL}" \
+            APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS="${APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS}" \
+            APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES="${APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES}" \
+            APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES="${APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES}" \
+            APP_INVITE_ACTIVATION_BASE_URL="${APP_INVITE_ACTIVATION_BASE_URL}" \
+            APP_INVITE_EXPIRATION_HOURS="${APP_INVITE_EXPIRATION_HOURS}" \
+            JWT_ISSUER="${JWT_ISSUER}" \
+            JWT_AUDIENCE="${JWT_AUDIENCE}" \
+            POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
+            REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD}" \
+            JWT_SECRET="${JWT_SECRET}" \
+            APP_OPENAPI_SERVER_URL="${APP_OPENAPI_SERVER_URL}" \
             docker compose up -d --remove-orphans
 
             docker image prune -f --filter "until=72h"
