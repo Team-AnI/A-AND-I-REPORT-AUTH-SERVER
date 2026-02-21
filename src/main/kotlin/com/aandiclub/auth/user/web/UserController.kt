@@ -8,6 +8,7 @@ import com.aandiclub.auth.user.web.dto.ChangePasswordResponse
 import com.aandiclub.auth.user.web.dto.CreateProfileImageUploadUrlRequest
 import com.aandiclub.auth.user.web.dto.CreateProfileImageUploadUrlResponse
 import com.aandiclub.auth.user.web.dto.MeResponse
+import com.aandiclub.auth.user.web.dto.UpdateProfileRequest
 import jakarta.validation.Valid
 import org.springframework.http.MediaType
 import org.springframework.http.codec.multipart.FilePart
@@ -37,6 +38,14 @@ class UserController(
 		@RequestPart("profileImage", required = false) profileImage: FilePart?,
 	): Mono<ApiResponse<MeResponse>> =
 		userService.updateProfile(user, nickname, profileImage)
+			.map { ApiResponse.success(it) }
+
+	@PatchMapping(consumes = [MediaType.APPLICATION_JSON_VALUE])
+	fun updateProfileAsJson(
+		@AuthenticationPrincipal user: AuthenticatedUser,
+		@Valid @RequestBody request: UpdateProfileRequest,
+	): Mono<ApiResponse<MeResponse>> =
+		userService.updateProfile(user, request.nickname, null)
 			.map { ApiResponse.success(it) }
 
 	@PostMapping("/profile-image/upload-url")

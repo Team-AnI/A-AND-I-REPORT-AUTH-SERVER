@@ -96,6 +96,15 @@ class AuthorizationMatrixTest : StringSpec() {
 				.expectStatus().isUnauthorized
 		}
 
+		"PATCH /v1/me with json requires authentication" {
+			webClient().patch()
+				.uri("/v1/me")
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue("""{"nickname":"new profile"}""")
+				.exchange()
+				.expectStatus().isUnauthorized
+		}
+
 		"POST /v1/me/profile-image/upload-url requires authentication" {
 			webClient().post()
 				.uri("/v1/me/profile-image/upload-url")
@@ -116,6 +125,24 @@ class AuthorizationMatrixTest : StringSpec() {
 				.headers { it.setBearerAuth(token) }
 				.contentType(MediaType.MULTIPART_FORM_DATA)
 				.body(BodyInserters.fromMultipartData("nickname", "new profile"))
+				.exchange()
+				.expectStatus().isOk
+				.expectBody()
+				.jsonPath("$.success").isEqualTo(true)
+				.jsonPath("$.data.nickname").isEqualTo("new profile")
+		}
+
+		"PATCH /v1/me with json allows USER role" {
+			val userId = UUID.randomUUID()
+			val username = "tester_profile_json"
+			insertUser(userId, username, UserRole.USER)
+			val token = accessToken(userId, username, UserRole.USER)
+
+			webClient().patch()
+				.uri("/v1/me")
+				.headers { it.setBearerAuth(token) }
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue("""{"nickname":"new profile"}""")
 				.exchange()
 				.expectStatus().isOk
 				.expectBody()
