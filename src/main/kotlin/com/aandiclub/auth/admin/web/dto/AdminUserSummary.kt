@@ -33,6 +33,21 @@ data class ResetPasswordResponse(
 	val temporaryPassword: String,
 )
 
+data class UpdateUserRoleRequest(
+	val userId: UUID,
+	val role: UserRole,
+)
+
+data class UpdateUserRoleResponse(
+	val id: UUID,
+	val username: String,
+	val role: UserRole,
+)
+
+data class DeleteUserRequest(
+	val userId: UUID,
+)
+
 enum class ProvisionType {
 	INVITE,
 	PASSWORD,
