@@ -27,6 +27,8 @@ data class UserEntity(
 	val nickname: String? = null,
 	@Column("profile_image_url")
 	val profileImageUrl: String? = null,
+	@Column("profile_version")
+	val profileVersion: Long = 0,
 	@Column("created_at")
 	val createdAt: Instant = Instant.now(),
 	@Column("updated_at")

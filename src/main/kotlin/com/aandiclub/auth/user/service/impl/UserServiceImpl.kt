@@ -7,6 +7,8 @@ import com.aandiclub.auth.common.error.ErrorCode
 import com.aandiclub.auth.user.config.ProfileImageProperties
 import com.aandiclub.auth.user.config.ProfileProperties
 import com.aandiclub.auth.user.domain.UserEntity
+import com.aandiclub.auth.user.event.UserProfileEventPublisher
+import com.aandiclub.auth.user.event.UserProfileUpdatedEvent
 import com.aandiclub.auth.user.repository.UserRepository
 import com.aandiclub.auth.user.service.UserService
 import com.aandiclub.auth.user.web.dto.ChangePasswordRequest
@@ -34,6 +36,7 @@ import software.amazon.awssdk.core.sync.RequestBody
 class UserServiceImpl(
 	private val userRepository: UserRepository,
 	private val passwordService: PasswordService,
+	private val userProfileEventPublisher: UserProfileEventPublisher,
 	private val profileImageProperties: ProfileImageProperties,
 	private val s3Presigner: S3Presigner,
 	private val s3Client: S3Client,
@@ -66,10 +69,12 @@ class UserServiceImpl(
 							entity.copy(
 								nickname = normalizedNickname ?: entity.nickname,
 								profileImageUrl = if (uploadedProfileImageUrl.isBlank()) null else uploadedProfileImageUrl,
+								profileVersion = entity.profileVersion + 1,
 							),
-						).map { updated ->
+						).flatMap { updated ->
 							logger.warn("security_audit event=profile_updated user_id={}", updated.id)
-							toMeResponse(updated)
+							userProfileEventPublisher.publishUserProfileUpdated(toUserProfileUpdatedEvent(updated))
+								.thenReturn(toMeResponse(updated))
 						}
 					}
 			}
@@ -155,6 +160,17 @@ class UserServiceImpl(
 			role = entity.role,
 			nickname = entity.nickname,
 			profileImageUrl = entity.profileImageUrl,
+		)
+
+	private fun toUserProfileUpdatedEvent(entity: UserEntity): UserProfileUpdatedEvent =
+		UserProfileUpdatedEvent(
+			eventId = UUID.randomUUID().toString(),
+			type = USER_PROFILE_UPDATED_EVENT_TYPE,
+			occurredAt = entity.updatedAt,
+			userId = requireNotNull(entity.id).toString(),
+			nickname = entity.nickname,
+			profileImageUrl = entity.profileImageUrl,
+			version = entity.profileVersion,
 		)
 
 	private fun normalizeNickname(raw: String): String {
@@ -273,6 +289,7 @@ class UserServiceImpl(
 	companion object {
 		private val logger = LoggerFactory.getLogger(UserServiceImpl::class.java)
 		private val NICKNAME_PATTERN = Regex("^[\\p{L}\\p{N} _.-]{1,40}$")
+		private const val USER_PROFILE_UPDATED_EVENT_TYPE = "UserProfileUpdated"
 		private const val MIN_UPLOAD_URL_EXP_SECONDS = 60L
 		private const val MAX_UPLOAD_URL_EXP_SECONDS = 3600L
 		private val CONTENT_TYPE_TO_EXTENSION = mapOf(

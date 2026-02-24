@@ -8,6 +8,8 @@ import com.aandiclub.auth.user.config.ProfileImageProperties
 import com.aandiclub.auth.user.config.ProfileProperties
 import com.aandiclub.auth.user.domain.UserEntity
 import com.aandiclub.auth.user.domain.UserRole
+import com.aandiclub.auth.user.event.UserProfileEventPublisher
+import com.aandiclub.auth.user.event.UserProfileUpdatedEvent
 import com.aandiclub.auth.user.repository.UserRepository
 import com.aandiclub.auth.user.service.impl.UserServiceImpl
 import com.aandiclub.auth.user.web.dto.CreateProfileImageUploadUrlRequest
@@ -16,6 +18,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
@@ -38,6 +41,7 @@ import java.util.UUID
 class UserServiceImplTest : FunSpec({
 	val userRepository = mockk<UserRepository>()
 	val passwordService = mockk<PasswordService>()
+	val userProfileEventPublisher = mockk<UserProfileEventPublisher>()
 	val s3Client = mockk<S3Client>()
 	val s3Presigner = S3Presigner.builder()
 		.region(Region.AP_NORTHEAST_2)
@@ -50,6 +54,7 @@ class UserServiceImplTest : FunSpec({
 	val service = UserServiceImpl(
 		userRepository = userRepository,
 		passwordService = passwordService,
+		userProfileEventPublisher = userProfileEventPublisher,
 		profileImageProperties = ProfileImageProperties(
 			enabled = true,
 			bucket = "my-images",
@@ -66,6 +71,7 @@ class UserServiceImplTest : FunSpec({
 			allowedImageHosts = "images.aandiclub.com,profile-bucket.s3.ap-northeast-2.amazonaws.com,my-images.s3.ap-northeast-2.amazonaws.com",
 		),
 	)
+	every { userProfileEventPublisher.publishUserProfileUpdated(any()) } returns Mono.empty()
 
 	test("getMe should return persisted profile fields") {
 		val userId = UUID.randomUUID()
@@ -105,6 +111,8 @@ class UserServiceImplTest : FunSpec({
 
 		every { userRepository.findById(userId) } returns Mono.just(entity)
 		every { userRepository.save(any()) } answers { Mono.just(firstArg()) }
+		val eventSlot = slot<UserProfileUpdatedEvent>()
+		every { userProfileEventPublisher.publishUserProfileUpdated(capture(eventSlot)) } returns Mono.empty()
 
 		StepVerifier.create(service.updateProfile(AuthenticatedUser(userId, "user_02", UserRole.USER), "new profile", null))
 			.assertNext { response ->
@@ -114,6 +122,12 @@ class UserServiceImplTest : FunSpec({
 			.verifyComplete()
 
 		verify(exactly = 0) { passwordService.matches(any(), any()) }
+		verify(exactly = 1) { userProfileEventPublisher.publishUserProfileUpdated(any()) }
+		eventSlot.captured.type shouldBe "UserProfileUpdated"
+		eventSlot.captured.userId shouldBe userId.toString()
+		eventSlot.captured.nickname shouldBe "new profile"
+		eventSlot.captured.profileImageUrl shouldBe "https://images.aandiclub.com/old.png"
+		eventSlot.captured.version shouldBe 1L
 	}
 
 	test("updateProfile should reject empty payload") {

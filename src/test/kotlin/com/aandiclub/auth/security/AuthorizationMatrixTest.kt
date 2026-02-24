@@ -55,6 +55,7 @@ class AuthorizationMatrixTest : StringSpec() {
 					"last_login_at" TIMESTAMP NULL,
 					"nickname" VARCHAR(40) NULL,
 					"profile_image_url" VARCHAR(2048) NULL,
+					"profile_version" BIGINT NOT NULL DEFAULT 0,
 					"created_at" TIMESTAMP NOT NULL,
 					"updated_at" TIMESTAMP NOT NULL
 				)
@@ -310,6 +311,7 @@ class AuthorizationMatrixTest : StringSpec() {
 				"last_login_at",
 				"nickname",
 				"profile_image_url",
+				"profile_version",
 				"created_at",
 				"updated_at"
 			) VALUES (
@@ -322,6 +324,7 @@ class AuthorizationMatrixTest : StringSpec() {
 				:lastLoginAt,
 				:nickname,
 				:profileImageUrl,
+				:profileVersion,
 				:createdAt,
 				:updatedAt
 			)
@@ -336,6 +339,7 @@ class AuthorizationMatrixTest : StringSpec() {
 			.bindNull("lastLoginAt", Instant::class.java)
 			.bindNull("nickname", String::class.java)
 			.bindNull("profileImageUrl", String::class.java)
+			.bind("profileVersion", 0L)
 			.bind("createdAt", Instant.now())
 			.bind("updatedAt", Instant.now())
 			.fetch()
