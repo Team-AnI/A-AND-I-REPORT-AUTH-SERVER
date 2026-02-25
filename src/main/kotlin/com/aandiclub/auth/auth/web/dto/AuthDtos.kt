@@ -55,8 +55,8 @@ data class ActivateRequest(
 	val password: String,
 	@field:Size(min = 3, max = 64, message = "username length must be between 3 and 64")
 	@field:Pattern(
-		regexp = "^[a-z0-9_]+$",
-		message = "username must contain only lowercase letters, numbers, and underscore",
+		regexp = "^[A-Za-z0-9_]+$",
+		message = "올바르지 않은 아이디 형식입니다. 영대소문자숫자만 사용가능합니다.",
 	)
 	val username: String? = null,
 )
