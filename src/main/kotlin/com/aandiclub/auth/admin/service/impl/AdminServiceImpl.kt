@@ -12,11 +12,13 @@ import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserResponse
 import com.aandiclub.auth.admin.web.dto.ProvisionType
 import com.aandiclub.auth.admin.web.dto.ResetPasswordResponse
+import com.aandiclub.auth.admin.web.dto.UpdateUserRoleResponse
 import com.aandiclub.auth.common.error.AppException
 import com.aandiclub.auth.common.error.ErrorCode
 import com.aandiclub.auth.security.service.PasswordService
 import com.aandiclub.auth.security.token.TokenHashService
 import com.aandiclub.auth.user.domain.UserEntity
+import com.aandiclub.auth.user.domain.UserRole
 import com.aandiclub.auth.user.repository.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -68,6 +70,32 @@ class AdminServiceImpl(
 					ResetPasswordResponse(temporaryPassword = temporaryPassword)
 				}
 			}
+
+	override fun updateUserRole(targetUserId: UUID, role: UserRole, actorUserId: UUID): Mono<UpdateUserRoleResponse> {
+		if (targetUserId == actorUserId) {
+			return Mono.error(AppException(ErrorCode.FORBIDDEN, "Admin cannot change own role."))
+		}
+
+		return userRepository.findById(targetUserId)
+			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
+			.flatMap { user ->
+				userRepository.save(user.copy(role = role))
+					.map { saved ->
+						logger.warn(
+							"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={}",
+							saved.id,
+							saved.username,
+							user.role,
+							saved.role,
+						)
+						UpdateUserRoleResponse(
+							id = requireNotNull(saved.id),
+							username = saved.username,
+							role = saved.role,
+						)
+					}
+			}
+	}
 
 	override fun deleteUser(targetUserId: UUID, actorUserId: UUID): Mono<Void> {
 		if (targetUserId == actorUserId) {

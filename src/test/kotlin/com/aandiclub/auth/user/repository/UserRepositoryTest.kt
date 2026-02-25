@@ -46,6 +46,7 @@ class UserRepositoryTest : FunSpec() {
 					"last_login_at" TIMESTAMP NULL,
 					"nickname" VARCHAR(40) NULL,
 					"profile_image_url" VARCHAR(2048) NULL,
+					"profile_version" BIGINT NOT NULL DEFAULT 0,
 					"created_at" TIMESTAMP NOT NULL,
 					"updated_at" TIMESTAMP NOT NULL
 				)

@@ -2,6 +2,7 @@ package com.aandiclub.auth.auth.web.dto
 
 import com.aandiclub.auth.user.domain.UserRole
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 import java.util.UUID
 
@@ -52,6 +53,12 @@ data class ActivateRequest(
 	@field:NotBlank(message = "password is required")
 	@field:Size(min = 12, max = 128, message = "password length must be between 12 and 128")
 	val password: String,
+	@field:Size(min = 3, max = 64, message = "username length must be between 3 and 64")
+	@field:Pattern(
+		regexp = "^[A-Za-z0-9_]+$",
+		message = "올바르지 않은 아이디 형식입니다. 영대소문자숫자만 사용가능합니다.",
+	)
+	val username: String? = null,
 )
 
 data class ActivateResponse(

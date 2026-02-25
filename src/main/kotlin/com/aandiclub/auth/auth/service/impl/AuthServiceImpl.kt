@@ -21,12 +21,15 @@ import com.aandiclub.auth.security.service.JwtService
 import com.aandiclub.auth.security.service.PasswordService
 import com.aandiclub.auth.security.token.RefreshTokenStateService
 import com.aandiclub.auth.security.token.TokenHashService
+import com.aandiclub.auth.user.domain.UserEntity
 import com.aandiclub.auth.user.repository.UserRepository
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Mono
 import java.time.Clock
 import java.time.Duration
+import java.util.Locale
 
 @Service
 class AuthServiceImpl(
@@ -103,17 +106,26 @@ class AuthServiceImpl(
 					} else {
 						userRepository.findById(invite.userId)
 							.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
-							.flatMap { user ->
-								val updatedUser = user.copy(
+							.flatMap { user -> resolveActivateUsername(normalizeUsername(request.username), user) }
+							.flatMap { activateUser ->
+								val updatedUser = activateUser.user.copy(
+									username = activateUser.username,
 									passwordHash = passwordService.hash(request.password),
 									forcePasswordChange = false,
 									isActive = true,
 								)
 								userRepository.save(updatedUser)
+									.onErrorMap(DataIntegrityViolationException::class.java) {
+										AppException(ErrorCode.INVALID_REQUEST, USERNAME_UNAVAILABLE_MESSAGE)
+									}
 									.then(userInviteRepository.save(invite.copy(usedAt = now)))
 									.then(inviteTokenCacheService.deleteToken(invite.tokenHash))
 									.map {
-										logger.warn("security_audit event=invite_activated user_id={}", updatedUser.id)
+										logger.warn(
+											"security_audit event=invite_activated user_id={} username={}",
+											updatedUser.id,
+											updatedUser.username,
+										)
 										ActivateResponse(success = true)
 									}
 							}
@@ -121,6 +133,24 @@ class AuthServiceImpl(
 				}
 		}
 	}
+
+	private fun resolveActivateUsername(requestedUsername: String?, user: UserEntity): Mono<ActivateUser> {
+		if (requestedUsername == null || requestedUsername == user.username) {
+			return Mono.just(ActivateUser(user, user.username))
+		}
+
+		return userRepository.findByUsername(requestedUsername)
+			.flatMap<ActivateUser> { existing ->
+				if (existing.id == user.id) {
+					Mono.just(ActivateUser(user, requestedUsername))
+				} else {
+					usernameUnavailable()
+				}
+			}
+			.switchIfEmpty(Mono.just(ActivateUser(user, requestedUsername)))
+	}
+
+	private fun normalizeUsername(username: String?): String? = username?.lowercase(Locale.ROOT)
 
 	private fun invalidCredentials(username: String): Mono<Nothing> {
 		securityTelemetry.loginFailed(username)
@@ -130,9 +160,18 @@ class AuthServiceImpl(
 	private fun invalidInviteToken(): Mono<Nothing> =
 		Mono.error(AppException(ErrorCode.UNAUTHORIZED, INVALID_INVITE_TOKEN_MESSAGE))
 
+	private fun usernameUnavailable(): Mono<Nothing> =
+		Mono.error(AppException(ErrorCode.INVALID_REQUEST, USERNAME_UNAVAILABLE_MESSAGE))
+
+	private data class ActivateUser(
+		val user: UserEntity,
+		val username: String,
+	)
+
 	companion object {
 		private const val INVALID_CREDENTIALS_MESSAGE = "Invalid username or password."
 		private const val INVALID_INVITE_TOKEN_MESSAGE = "Invalid or expired invite token."
+		private const val USERNAME_UNAVAILABLE_MESSAGE = "Requested username is not available."
 		private val logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
 	}
 }

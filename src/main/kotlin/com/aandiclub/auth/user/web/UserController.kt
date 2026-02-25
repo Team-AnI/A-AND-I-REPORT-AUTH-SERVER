@@ -46,7 +46,7 @@ class UserController(
 			is FormFieldPart -> nickname.value()
 			else -> return Mono.error(AppException(ErrorCode.INVALID_REQUEST, "nickname must be a text form field."))
 		}
-		return userService.updateProfile(user, nicknameValue, profileImage)
+		return userService.updateProfile(user, nicknameValue, profileImage, null)
 			.map { ApiResponse.success(it) }
 	}
 
@@ -55,7 +55,7 @@ class UserController(
 		@AuthenticationPrincipal user: AuthenticatedUser,
 		@Valid @RequestBody request: UpdateProfileRequest,
 	): Mono<ApiResponse<MeResponse>> =
-		userService.updateProfile(user, request.nickname, null)
+		userService.updateProfile(user, request.nickname, null, request.profileImageUrl)
 			.map { ApiResponse.success(it) }
 
 	@PostMapping("/profile-image/upload-url")

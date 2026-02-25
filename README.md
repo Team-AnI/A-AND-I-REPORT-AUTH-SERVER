@@ -25,6 +25,7 @@ docker compose up --build
 - `POST /v1/me`를 `multipart/form-data`로 호출해 `nickname` + `profileImage`를 한 번에 처리
   - 서버가 이미지를 S3에 업로드한 뒤 사용자 프로필을 갱신
 - (옵션) `POST /v1/me/profile-image/upload-url` presigned 업로드 방식도 지원
+  - presigned 업로드 후 `PATCH /v1/me`에 `profileImageUrl`을 보내 사용자 프로필에 반영
 
 필수 환경 변수:
 - `APP_PROFILE_ALLOWED_IMAGE_HOSTS`: 저장 허용할 이미지 호스트(콤마 구분)

@@ -24,6 +24,8 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
+import org.springframework.dao.DataIntegrityViolationException
 import reactor.core.publisher.Mono
 import reactor.test.StepVerifier
 import java.time.Clock
@@ -208,6 +210,158 @@ class AuthServiceImplTest : FunSpec({
 				response.success shouldBe true
 			}
 			.verifyComplete()
+	}
+
+	test("activate should allow username change when requested username is available") {
+		val userId = UUID.randomUUID()
+		val invite = UserInviteEntity(
+			id = UUID.randomUUID(),
+			userId = userId,
+			tokenHash = "invite-hash",
+			expiresAt = Instant.parse("2026-02-20T00:00:00Z"),
+			usedAt = null,
+			createdAt = Instant.parse("2026-02-18T00:00:00Z"),
+		)
+		val user = UserEntity(
+			id = userId,
+			username = "user_09",
+			passwordHash = "placeholder",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+		val savedUserSlot = slot<UserEntity>()
+
+		every { tokenHashService.sha256Hex("invite-token") } returns "invite-hash"
+		every { userInviteRepository.findByTokenHash("invite-hash") } returns Mono.just(invite)
+		every { userRepository.findById(userId) } returns Mono.just(user)
+		every { userRepository.findByUsername("member_09") } returns Mono.empty()
+		every { passwordService.hash("new-password-123") } returns "new-hash"
+		every { userRepository.save(capture(savedUserSlot)) } answers { Mono.just(firstArg()) }
+		every { userInviteRepository.save(any()) } answers { Mono.just(firstArg()) }
+		every { inviteTokenCacheService.deleteToken("invite-hash") } returns Mono.just(true)
+
+		StepVerifier.create(authService.activate(ActivateRequest("invite-token", "new-password-123", "member_09")))
+			.assertNext { response ->
+				response.success shouldBe true
+			}
+			.verifyComplete()
+
+		savedUserSlot.captured.username shouldBe "member_09"
+		savedUserSlot.captured.isActive shouldBe true
+		savedUserSlot.captured.forcePasswordChange shouldBe false
+	}
+
+	test("activate should normalize requested username to lowercase") {
+		val userId = UUID.randomUUID()
+		val invite = UserInviteEntity(
+			id = UUID.randomUUID(),
+			userId = userId,
+			tokenHash = "invite-hash",
+			expiresAt = Instant.parse("2026-02-20T00:00:00Z"),
+			usedAt = null,
+			createdAt = Instant.parse("2026-02-18T00:00:00Z"),
+		)
+		val user = UserEntity(
+			id = userId,
+			username = "user_09",
+			passwordHash = "placeholder",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+		val savedUserSlot = slot<UserEntity>()
+
+		every { tokenHashService.sha256Hex("invite-token") } returns "invite-hash"
+		every { userInviteRepository.findByTokenHash("invite-hash") } returns Mono.just(invite)
+		every { userRepository.findById(userId) } returns Mono.just(user)
+		every { userRepository.findByUsername("member_09") } returns Mono.empty()
+		every { passwordService.hash("new-password-123") } returns "new-hash"
+		every { userRepository.save(capture(savedUserSlot)) } answers { Mono.just(firstArg()) }
+		every { userInviteRepository.save(any()) } answers { Mono.just(firstArg()) }
+		every { inviteTokenCacheService.deleteToken("invite-hash") } returns Mono.just(true)
+
+		StepVerifier.create(authService.activate(ActivateRequest("invite-token", "new-password-123", "Member_09")))
+			.assertNext { response ->
+				response.success shouldBe true
+			}
+			.verifyComplete()
+
+		savedUserSlot.captured.username shouldBe "member_09"
+	}
+
+	test("activate should reject username change when requested username is already used") {
+		val userId = UUID.randomUUID()
+		val invite = UserInviteEntity(
+			id = UUID.randomUUID(),
+			userId = userId,
+			tokenHash = "invite-hash",
+			expiresAt = Instant.parse("2026-02-20T00:00:00Z"),
+			usedAt = null,
+			createdAt = Instant.parse("2026-02-18T00:00:00Z"),
+		)
+		val user = UserEntity(
+			id = userId,
+			username = "user_09",
+			passwordHash = "placeholder",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+		val existingUser = UserEntity(
+			id = UUID.randomUUID(),
+			username = "member_09",
+			passwordHash = "placeholder",
+			role = UserRole.USER,
+			forcePasswordChange = false,
+			isActive = true,
+		)
+
+		every { tokenHashService.sha256Hex("invite-token") } returns "invite-hash"
+		every { userInviteRepository.findByTokenHash("invite-hash") } returns Mono.just(invite)
+		every { userRepository.findById(userId) } returns Mono.just(user)
+		every { userRepository.findByUsername("member_09") } returns Mono.just(existingUser)
+
+		StepVerifier.create(authService.activate(ActivateRequest("invite-token", "new-password-123", "member_09")))
+			.expectErrorSatisfies { ex ->
+				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
+				ex.message shouldBe "Requested username is not available."
+			}
+			.verify()
+	}
+
+	test("activate should map username unique constraint conflicts to invalid request") {
+		val userId = UUID.randomUUID()
+		val invite = UserInviteEntity(
+			id = UUID.randomUUID(),
+			userId = userId,
+			tokenHash = "invite-hash",
+			expiresAt = Instant.parse("2026-02-20T00:00:00Z"),
+			usedAt = null,
+			createdAt = Instant.parse("2026-02-18T00:00:00Z"),
+		)
+		val user = UserEntity(
+			id = userId,
+			username = "user_09",
+			passwordHash = "placeholder",
+			role = UserRole.USER,
+			forcePasswordChange = true,
+			isActive = false,
+		)
+
+		every { tokenHashService.sha256Hex("invite-token") } returns "invite-hash"
+		every { userInviteRepository.findByTokenHash("invite-hash") } returns Mono.just(invite)
+		every { userRepository.findById(userId) } returns Mono.just(user)
+		every { userRepository.findByUsername("member_09") } returns Mono.empty()
+		every { passwordService.hash("new-password-123") } returns "new-hash"
+		every { userRepository.save(any()) } returns Mono.error(DataIntegrityViolationException("duplicate username"))
+
+		StepVerifier.create(authService.activate(ActivateRequest("invite-token", "new-password-123", "member_09")))
+			.expectErrorSatisfies { ex ->
+				(ex as AppException).errorCode shouldBe ErrorCode.INVALID_REQUEST
+				ex.message shouldBe "Requested username is not available."
+			}
+			.verify()
 	}
 
 	test("activate should reject expired invite token") {

@@ -5,13 +5,14 @@ import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 
 data class UpdateProfileRequest(
-	@field:NotBlank(message = "nickname is required")
 	@field:Size(max = 40, message = "nickname length must be less than or equal to 40")
 	@field:Pattern(
 		regexp = "^[\\p{L}\\p{N} _.-]{1,40}$",
 		message = "nickname allows only letters, numbers, spaces, underscores, hyphens, and dots.",
 	)
-	val nickname: String,
+	val nickname: String? = null,
+	@field:Size(max = 2048, message = "profileImageUrl length must be less than or equal to 2048")
+	val profileImageUrl: String? = null,
 )
 
 data class CreateProfileImageUploadUrlRequest(

@@ -57,6 +57,11 @@ app:
     upload-url-expiration-seconds: ${APP_PROFILE_IMAGE_UPLOAD_URL_EXPIRATION_SECONDS:600}
     max-upload-bytes: ${APP_PROFILE_IMAGE_MAX_UPLOAD_BYTES:5242880}
     allowed-content-types: ${APP_PROFILE_IMAGE_ALLOWED_CONTENT_TYPES:image/jpeg,image/png,image/webp}
+  user-profile-event:
+    enabled: ${APP_USER_PROFILE_EVENT_ENABLED:false}
+    topic-arn: ${APP_USER_PROFILE_EVENT_TOPIC_ARN:}
+    region: ${APP_USER_PROFILE_EVENT_REGION:ap-northeast-2}
+    fifo-message-group-id: ${APP_USER_PROFILE_EVENT_FIFO_MESSAGE_GROUP_ID:user-profile-updated}
 
 springdoc:
   api-docs:

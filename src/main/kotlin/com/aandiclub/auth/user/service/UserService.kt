@@ -11,7 +11,7 @@ import reactor.core.publisher.Mono
 
 interface UserService {
 	fun getMe(user: AuthenticatedUser): Mono<MeResponse>
-	fun updateProfile(user: AuthenticatedUser, nickname: String?, profileImage: FilePart?): Mono<MeResponse>
+	fun updateProfile(user: AuthenticatedUser, nickname: String?, profileImage: FilePart?, profileImageUrl: String?): Mono<MeResponse>
 	fun createProfileImageUploadUrl(user: AuthenticatedUser, request: CreateProfileImageUploadUrlRequest): Mono<CreateProfileImageUploadUrlResponse>
 	fun changePassword(user: AuthenticatedUser, request: ChangePasswordRequest): Mono<ChangePasswordResponse>
 }

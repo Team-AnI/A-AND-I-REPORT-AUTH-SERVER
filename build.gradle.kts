@@ -33,6 +33,7 @@ dependencies {
 	implementation("com.nimbusds:nimbus-jose-jwt:10.0.2")
 	implementation("org.springdoc:springdoc-openapi-starter-webflux-ui:2.8.13")
 	implementation("software.amazon.awssdk:s3")
+	implementation("software.amazon.awssdk:sns")
 	implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")

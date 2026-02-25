@@ -5,9 +5,11 @@ import com.aandiclub.auth.user.domain.UserRole
 import io.kotest.core.extensions.Extension
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.extensions.spring.SpringExtension
+import io.kotest.matchers.shouldBe
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
+import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.r2dbc.core.DatabaseClient
@@ -39,10 +41,10 @@ class AuthorizationMatrixTest : StringSpec() {
 
 	override fun extensions(): List<Extension> = listOf(SpringExtension)
 
-	init {
-		beforeSpec {
-			databaseClient.sql(
-				"""
+		init {
+			beforeSpec {
+				databaseClient.sql(
+					"""
 				CREATE TABLE IF NOT EXISTS "users" (
 					"id" UUID PRIMARY KEY,
 					"username" VARCHAR(64) NOT NULL UNIQUE,
@@ -53,16 +55,31 @@ class AuthorizationMatrixTest : StringSpec() {
 					"last_login_at" TIMESTAMP NULL,
 					"nickname" VARCHAR(40) NULL,
 					"profile_image_url" VARCHAR(2048) NULL,
+					"profile_version" BIGINT NOT NULL DEFAULT 0,
 					"created_at" TIMESTAMP NOT NULL,
 					"updated_at" TIMESTAMP NOT NULL
 				)
-				""".trimIndent(),
-			).fetch().rowsUpdated().block()
-		}
+					""".trimIndent(),
+				).fetch().rowsUpdated().block()
+				databaseClient.sql(
+					"""
+					CREATE TABLE IF NOT EXISTS "user_invites" (
+						"id" UUID PRIMARY KEY,
+						"user_id" UUID NOT NULL,
+						"token_hash" VARCHAR(128) NOT NULL UNIQUE,
+						"expires_at" TIMESTAMP NOT NULL,
+						"used_at" TIMESTAMP NULL,
+						"created_at" TIMESTAMP NOT NULL,
+						CONSTRAINT "fk_user_invites_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE
+					)
+					""".trimIndent(),
+				).fetch().rowsUpdated().block()
+			}
 
-		beforeTest {
-			databaseClient.sql("""DELETE FROM "users"""").fetch().rowsUpdated().block()
-		}
+			beforeTest {
+				databaseClient.sql("""DELETE FROM "user_invites"""").fetch().rowsUpdated().block()
+				databaseClient.sql("""DELETE FROM "users"""").fetch().rowsUpdated().block()
+			}
 
 		"GET /v1/me requires authentication" {
 			webClient().get()
@@ -150,6 +167,24 @@ class AuthorizationMatrixTest : StringSpec() {
 				.jsonPath("$.data.nickname").isEqualTo("new profile")
 		}
 
+		"PATCH /v1/me with profileImageUrl allows USER role" {
+			val userId = UUID.randomUUID()
+			val username = "tester_profile_image_json"
+			insertUser(userId, username, UserRole.USER)
+			val token = accessToken(userId, username, UserRole.USER)
+
+			webClient().patch()
+				.uri("/v1/me")
+				.headers { it.setBearerAuth(token) }
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue("""{"profileImageUrl":"https://images.aandiclub.com/users/avatar.png"}""")
+				.exchange()
+				.expectStatus().isOk
+				.expectBody()
+				.jsonPath("$.success").isEqualTo(true)
+				.jsonPath("$.data.profileImageUrl").isEqualTo("https://images.aandiclub.com/users/avatar.png")
+		}
+
 		"POST /v1/me with multipart file is parsed (not 415) and rejected by policy when upload disabled" {
 			val userId = UUID.randomUUID()
 			val username = "tester_profile_file"
@@ -193,18 +228,88 @@ class AuthorizationMatrixTest : StringSpec() {
 				.expectStatus().isForbidden
 		}
 
-		"GET /v1/admin/ping allows ADMIN role" {
-			val token = accessToken(UUID.randomUUID(), "tester_admin", UserRole.ADMIN)
-			webClient().get()
-				.uri("/v1/admin/ping")
+			"GET /v1/admin/ping allows ADMIN role" {
+				val token = accessToken(UUID.randomUUID(), "tester_admin", UserRole.ADMIN)
+				webClient().get()
+					.uri("/v1/admin/ping")
 				.headers { it.setBearerAuth(token) }
 				.exchange()
 				.expectStatus().isOk
 				.expectBody()
-				.jsonPath("$.success").isEqualTo(true)
-				.jsonPath("$.data.ok").isEqualTo(true)
+					.jsonPath("$.success").isEqualTo(true)
+					.jsonPath("$.data.ok").isEqualTo(true)
+			}
+
+			"PATCH /v1/admin/users/role denies USER role" {
+				val targetUserId = UUID.randomUUID()
+				val token = accessToken(UUID.randomUUID(), "tester_user_role_patch_denied", UserRole.USER)
+				webClient().patch()
+					.uri("/v1/admin/users/role")
+					.headers { it.setBearerAuth(token) }
+					.contentType(MediaType.APPLICATION_JSON)
+					.bodyValue("""{"userId":"$targetUserId","role":"ORGANIZER"}""")
+					.exchange()
+					.expectStatus().isForbidden
+			}
+
+			"PATCH /v1/admin/users/role denies ORGANIZER role" {
+				val targetUserId = UUID.randomUUID()
+				val token = accessToken(UUID.randomUUID(), "tester_organizer_role_patch_denied", UserRole.ORGANIZER)
+				webClient().patch()
+					.uri("/v1/admin/users/role")
+					.headers { it.setBearerAuth(token) }
+					.contentType(MediaType.APPLICATION_JSON)
+					.bodyValue("""{"userId":"$targetUserId","role":"USER"}""")
+					.exchange()
+					.expectStatus().isForbidden
+			}
+
+			"PATCH /v1/admin/users/role allows ADMIN role" {
+				val targetUserId = UUID.randomUUID()
+				insertUser(targetUserId, "target_role_user", UserRole.USER)
+				val token = accessToken(UUID.randomUUID(), "tester_admin_role_patch_allowed", UserRole.ADMIN)
+
+				webClient().patch()
+					.uri("/v1/admin/users/role")
+					.headers { it.setBearerAuth(token) }
+					.contentType(MediaType.APPLICATION_JSON)
+					.bodyValue("""{"userId":"$targetUserId","role":"ORGANIZER"}""")
+					.exchange()
+					.expectStatus().isOk
+					.expectBody()
+					.jsonPath("$.success").isEqualTo(true)
+					.jsonPath("$.data.id").isEqualTo(targetUserId.toString())
+					.jsonPath("$.data.role").isEqualTo("ORGANIZER")
+			}
+
+			"DELETE /v1/admin/users denies USER role" {
+				val targetUserId = UUID.randomUUID()
+				val token = accessToken(UUID.randomUUID(), "tester_user_delete_denied", UserRole.USER)
+				webClient().method(HttpMethod.DELETE)
+					.uri("/v1/admin/users")
+					.headers { it.setBearerAuth(token) }
+					.contentType(MediaType.APPLICATION_JSON)
+					.bodyValue("""{"userId":"$targetUserId"}""")
+					.exchange()
+					.expectStatus().isForbidden
+			}
+
+			"DELETE /v1/admin/users allows ADMIN role" {
+				val targetUserId = UUID.randomUUID()
+				insertUser(targetUserId, "target_delete_user", UserRole.USER)
+				val token = accessToken(UUID.randomUUID(), "tester_admin_delete_allowed", UserRole.ADMIN)
+
+				webClient().method(HttpMethod.DELETE)
+					.uri("/v1/admin/users")
+					.headers { it.setBearerAuth(token) }
+					.contentType(MediaType.APPLICATION_JSON)
+					.bodyValue("""{"userId":"$targetUserId"}""")
+					.exchange()
+					.expectStatus().isNoContent
+
+				userExists(targetUserId) shouldBe false
+			}
 		}
-	}
 
 	private fun webClient(): WebTestClient = WebTestClient.bindToApplicationContext(applicationContext).build()
 
@@ -224,6 +329,7 @@ class AuthorizationMatrixTest : StringSpec() {
 				"last_login_at",
 				"nickname",
 				"profile_image_url",
+				"profile_version",
 				"created_at",
 				"updated_at"
 			) VALUES (
@@ -236,6 +342,7 @@ class AuthorizationMatrixTest : StringSpec() {
 				:lastLoginAt,
 				:nickname,
 				:profileImageUrl,
+				:profileVersion,
 				:createdAt,
 				:updatedAt
 			)
@@ -250,10 +357,20 @@ class AuthorizationMatrixTest : StringSpec() {
 			.bindNull("lastLoginAt", Instant::class.java)
 			.bindNull("nickname", String::class.java)
 			.bindNull("profileImageUrl", String::class.java)
+			.bind("profileVersion", 0L)
 			.bind("createdAt", Instant.now())
 			.bind("updatedAt", Instant.now())
 			.fetch()
 			.rowsUpdated()
 			.block()
+	}
+
+	private fun userExists(userId: UUID): Boolean {
+		val row = databaseClient.sql("""SELECT COUNT(1) AS cnt FROM "users" WHERE "id" = :userId""")
+			.bind("userId", userId)
+			.fetch()
+			.one()
+			.block()
+		return ((row?.get("cnt") as Number).toLong() > 0)
 	}
 }

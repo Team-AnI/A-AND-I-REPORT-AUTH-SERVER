@@ -26,6 +26,33 @@ class ActivationControllerTest : FunSpec({
 			.exchange()
 			.expectStatus().isOk
 			.expectBody()
+				.jsonPath("$.success").isEqualTo(true)
+				.jsonPath("$.data.success").isEqualTo(true)
+	}
+
+	test("POST /activate rejects invalid username format") {
+		webTestClient.post()
+			.uri("/activate")
+			.contentType(MediaType.APPLICATION_JSON)
+			.bodyValue("""{"token":"invite-token","password":"new-password-123","username":"Invalid Name"}""")
+			.exchange()
+			.expectStatus().isBadRequest
+			.expectBody()
+			.jsonPath("$.success").isEqualTo(false)
+			.jsonPath("$.error.code").isEqualTo("INVALID_REQUEST")
+			.jsonPath("$.error.message").isEqualTo("올바르지 않은 아이디 형식입니다. 영대소문자숫자만 사용가능합니다.")
+	}
+
+	test("POST /activate accepts uppercase username input") {
+		every { authService.activate(any()) } returns Mono.just(ActivateResponse(success = true))
+
+		webTestClient.post()
+			.uri("/activate")
+			.contentType(MediaType.APPLICATION_JSON)
+			.bodyValue("""{"token":"invite-token","password":"new-password-123","username":"Member_09"}""")
+			.exchange()
+			.expectStatus().isOk
+			.expectBody()
 			.jsonPath("$.success").isEqualTo(true)
 			.jsonPath("$.data.success").isEqualTo(true)
 	}

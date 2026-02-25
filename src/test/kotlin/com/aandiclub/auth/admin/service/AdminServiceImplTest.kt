@@ -9,6 +9,8 @@ import com.aandiclub.auth.admin.sequence.UsernameSequenceService
 import com.aandiclub.auth.admin.service.impl.AdminServiceImpl
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
 import com.aandiclub.auth.admin.web.dto.ProvisionType
+import com.aandiclub.auth.common.error.AppException
+import com.aandiclub.auth.common.error.ErrorCode
 import com.aandiclub.auth.security.service.PasswordService
 import com.aandiclub.auth.security.token.TokenHashService
 import com.aandiclub.auth.user.domain.UserEntity
@@ -243,11 +245,45 @@ class AdminServiceImplTest : FunSpec({
 		verify(exactly = 1) { userRepository.deleteById(targetId) }
 	}
 
+	test("updateUserRole should update target user's role") {
+		val actorId = UUID.randomUUID()
+		val targetId = UUID.randomUUID()
+		val originalUser = UserEntity(
+			id = targetId,
+			username = "member_01",
+			passwordHash = "h1",
+			role = UserRole.USER,
+		)
+		val savedSlot = slot<UserEntity>()
+
+		every { userRepository.findById(targetId) } returns Mono.just(originalUser)
+		every { userRepository.save(capture(savedSlot)) } returns Mono.just(originalUser.copy(role = UserRole.ORGANIZER))
+
+		StepVerifier.create(service.updateUserRole(targetId, UserRole.ORGANIZER, actorId))
+			.assertNext { response ->
+				response.id shouldBe targetId
+				response.username shouldBe "member_01"
+				response.role shouldBe UserRole.ORGANIZER
+			}
+			.verifyComplete()
+
+		savedSlot.captured.role shouldBe UserRole.ORGANIZER
+	}
+
+	test("updateUserRole should reject self role change") {
+		val adminId = UUID.randomUUID()
+		StepVerifier.create(service.updateUserRole(adminId, UserRole.USER, adminId))
+			.expectErrorSatisfies { ex ->
+				(ex as AppException).errorCode shouldBe ErrorCode.FORBIDDEN
+			}
+			.verify()
+	}
+
 	test("deleteUser should reject self deletion") {
 		val adminId = UUID.randomUUID()
 		StepVerifier.create(service.deleteUser(adminId, adminId))
 			.expectErrorSatisfies { ex ->
-				(ex as com.aandiclub.auth.common.error.AppException).errorCode shouldBe com.aandiclub.auth.common.error.ErrorCode.FORBIDDEN
+				(ex as AppException).errorCode shouldBe ErrorCode.FORBIDDEN
 			}
 			.verify()
 	}
