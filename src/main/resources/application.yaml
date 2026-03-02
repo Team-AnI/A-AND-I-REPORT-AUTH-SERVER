@@ -46,6 +46,8 @@ app:
   invite:
     activation-base-url: ${APP_INVITE_ACTIVATION_BASE_URL:https://your-domain.com/activate}
     expiration-hours: ${APP_INVITE_EXPIRATION_HOURS:72}
+  schema-guard:
+    enabled: ${APP_SCHEMA_GUARD_ENABLED:true}
   profile:
     allowed-image-hosts: ${APP_PROFILE_ALLOWED_IMAGE_HOSTS:}
   profile-image:
