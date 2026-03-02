@@ -12,6 +12,8 @@ import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserResponse
 import com.aandiclub.auth.admin.web.dto.ProvisionType
 import com.aandiclub.auth.admin.web.dto.ResetPasswordResponse
+import com.aandiclub.auth.admin.web.dto.UpdateUserRequest
+import com.aandiclub.auth.admin.web.dto.UpdateUserResponse
 import com.aandiclub.auth.admin.web.dto.UpdateUserRoleResponse
 import com.aandiclub.auth.common.error.AppException
 import com.aandiclub.auth.common.error.ErrorCode
@@ -88,8 +90,6 @@ class AdminServiceImpl(
 	override fun updateUserRole(
 		targetUserId: UUID,
 		role: UserRole,
-		userTrack: UserTrack?,
-		cohort: Int?,
 		actorUserId: UUID,
 	): Mono<UpdateUserRoleResponse> {
 		if (targetUserId == actorUserId) {
@@ -99,7 +99,71 @@ class AdminServiceImpl(
 		return userRepository.findById(targetUserId)
 			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
 			.flatMap { user ->
-				val resolvedCohort = cohort ?: user.cohort
+				val resolvedTrack = userPublicCodeService.resolveTrack(
+					role = role,
+					requestedTrack = if (role == UserRole.USER) user.userTrack else null,
+				)
+				val recalculatedPublicCode = userPublicCodeService.generate(
+					role = role,
+					userTrack = resolvedTrack,
+					cohort = user.cohort,
+					cohortOrder = user.cohortOrder,
+				)
+				userRepository.save(
+					user.copy(
+						role = role,
+						userTrack = resolvedTrack,
+						publicCode = recalculatedPublicCode,
+					),
+				).map { saved ->
+					logger.warn(
+						"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={} public_code={}",
+						saved.id,
+						saved.username,
+						user.role,
+						saved.role,
+						saved.publicCode,
+					)
+					UpdateUserRoleResponse(
+						id = requireNotNull(saved.id),
+						username = saved.username,
+						role = saved.role,
+						userTrack = saved.userTrack,
+						cohort = saved.cohort,
+						cohortOrder = saved.cohortOrder,
+						publicCode = saved.publicCode,
+					)
+				}
+			}
+	}
+
+	override fun updateUser(request: UpdateUserRequest, actorUserId: UUID): Mono<UpdateUserResponse> {
+		if (request.userId == actorUserId) {
+			return Mono.error(AppException(ErrorCode.FORBIDDEN, "Admin cannot update own account via admin endpoint."))
+		}
+		if (request.userTrack == null && request.cohort == null && request.nickname == null) {
+			return Mono.error(AppException(ErrorCode.INVALID_REQUEST, "At least one updatable field is required."))
+		}
+
+		val normalizedNickname = request.nickname?.trim()?.let { nickname ->
+			if (nickname.isEmpty()) {
+				return Mono.error(AppException(ErrorCode.INVALID_REQUEST, "nickname must not be blank."))
+			}
+			if (!NICKNAME_PATTERN.matches(nickname)) {
+				return Mono.error(
+					AppException(
+						ErrorCode.INVALID_REQUEST,
+						"nickname allows only letters, numbers, spaces, underscores, hyphens, and dots.",
+					),
+				)
+			}
+			nickname
+		}
+
+		return userRepository.findById(request.userId)
+			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
+			.flatMap { user ->
+				val resolvedCohort = request.cohort ?: user.cohort
 				val cohortOrderMono = if (resolvedCohort == user.cohort) {
 					Mono.just(user.cohortOrder)
 				} else {
@@ -108,30 +172,28 @@ class AdminServiceImpl(
 
 				cohortOrderMono.flatMap { resolvedCohortOrder ->
 					val resolvedTrack = userPublicCodeService.resolveTrack(
-						role = role,
-						requestedTrack = if (role == UserRole.USER) userTrack ?: user.userTrack else null,
+						role = user.role,
+						requestedTrack = if (user.role == UserRole.USER) request.userTrack ?: user.userTrack else null,
 					)
 					val recalculatedPublicCode = userPublicCodeService.generate(
-						role = role,
+						role = user.role,
 						userTrack = resolvedTrack,
 						cohort = resolvedCohort,
 						cohortOrder = resolvedCohortOrder,
 					)
 					userRepository.save(
 						user.copy(
-							role = role,
 							userTrack = resolvedTrack,
 							cohort = resolvedCohort,
 							cohortOrder = resolvedCohortOrder,
 							publicCode = recalculatedPublicCode,
+							nickname = normalizedNickname ?: user.nickname,
 						),
 					).map { saved ->
 						logger.warn(
-							"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={} old_track={} new_track={} old_cohort={} new_cohort={} old_cohort_order={} new_cohort_order={} public_code={}",
+							"security_audit event=admin_user_updated user_id={} username={} old_track={} new_track={} old_cohort={} new_cohort={} old_cohort_order={} new_cohort_order={} public_code={}",
 							saved.id,
 							saved.username,
-							user.role,
-							saved.role,
 							user.userTrack,
 							saved.userTrack,
 							user.cohort,
@@ -140,7 +202,7 @@ class AdminServiceImpl(
 							saved.cohortOrder,
 							saved.publicCode,
 						)
-						UpdateUserRoleResponse(
+						UpdateUserResponse(
 							id = requireNotNull(saved.id),
 							username = saved.username,
 							role = saved.role,
@@ -148,6 +210,7 @@ class AdminServiceImpl(
 							cohort = saved.cohort,
 							cohortOrder = saved.cohortOrder,
 							publicCode = saved.publicCode,
+							nickname = saved.nickname,
 						)
 					}
 				}
@@ -294,6 +357,7 @@ class AdminServiceImpl(
 			publicCode = user.publicCode,
 			isActive = user.isActive,
 			forcePasswordChange = user.forcePasswordChange,
+			nickname = user.nickname,
 		)
 		if (user.isActive) {
 			return Mono.just(baseSummary)
@@ -318,5 +382,6 @@ class AdminServiceImpl(
 
 	companion object {
 		private val logger = LoggerFactory.getLogger(AdminServiceImpl::class.java)
+		private val NICKNAME_PATTERN = Regex("^[\\p{L}\\p{N} _.-]{1,40}$")
 	}
 }

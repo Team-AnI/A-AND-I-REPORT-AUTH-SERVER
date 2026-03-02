@@ -17,6 +17,7 @@ data class AdminUserSummary(
 	val publicCode: String,
 	val isActive: Boolean,
 	val forcePasswordChange: Boolean,
+	val nickname: String? = null,
 	val inviteLink: String? = null,
 	val inviteExpiresAt: Instant? = null,
 )
@@ -50,10 +51,15 @@ data class ResetPasswordResponse(
 data class UpdateUserRoleRequest(
 	val userId: UUID,
 	val role: UserRole,
+)
+
+data class UpdateUserRequest(
+	val userId: UUID,
 	val userTrack: UserTrack? = null,
 	@field:Min(0, message = "cohort must be between 0 and 9")
 	@field:Max(9, message = "cohort must be between 0 and 9")
 	val cohort: Int? = null,
+	val nickname: String? = null,
 )
 
 data class UpdateUserRoleResponse(
@@ -64,6 +70,17 @@ data class UpdateUserRoleResponse(
 	val cohort: Int,
 	val cohortOrder: Int,
 	val publicCode: String,
+)
+
+data class UpdateUserResponse(
+	val id: UUID,
+	val username: String,
+	val role: UserRole,
+	val userTrack: UserTrack,
+	val cohort: Int,
+	val cohortOrder: Int,
+	val publicCode: String,
+	val nickname: String? = null,
 )
 
 data class DeleteUserRequest(
