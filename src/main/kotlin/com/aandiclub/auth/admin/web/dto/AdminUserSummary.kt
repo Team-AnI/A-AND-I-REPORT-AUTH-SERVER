@@ -26,7 +26,6 @@ data class CreateAdminUserRequest(
 	@field:Max(9, message = "cohort must be between 0 and 9")
 	val cohort: Int,
 	val role: UserRole = UserRole.USER,
-	val userTrack: UserTrack? = null,
 	val provisionType: ProvisionType = ProvisionType.INVITE,
 )
 
@@ -52,6 +51,9 @@ data class UpdateUserRoleRequest(
 	val userId: UUID,
 	val role: UserRole,
 	val userTrack: UserTrack? = null,
+	@field:Min(0, message = "cohort must be between 0 and 9")
+	@field:Max(9, message = "cohort must be between 0 and 9")
+	val cohort: Int? = null,
 )
 
 data class UpdateUserRoleResponse(
