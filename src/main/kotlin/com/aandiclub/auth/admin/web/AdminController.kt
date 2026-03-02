@@ -37,7 +37,7 @@ class AdminController(
 		adminService.getUsers().map { ApiResponse.success(it) }
 
 	@PostMapping("/users")
-	fun createUser(@RequestBody request: CreateAdminUserRequest): Mono<ApiResponse<CreateAdminUserResponse>> =
+	fun createUser(@Valid @RequestBody request: CreateAdminUserRequest): Mono<ApiResponse<CreateAdminUserResponse>> =
 		adminService.createUser(request).map { ApiResponse.success(it) }
 
 	@PostMapping("/users/{id}/reset-password")
@@ -52,6 +52,7 @@ class AdminController(
 		adminService.updateUserRole(
 			targetUserId = request.userId,
 			role = request.role,
+			userTrack = request.userTrack,
 			actorUserId = actor.userId,
 		).map { ApiResponse.success(it) }
 

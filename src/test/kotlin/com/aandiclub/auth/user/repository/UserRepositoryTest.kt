@@ -41,6 +41,10 @@ class UserRepositoryTest : FunSpec() {
 					"username" VARCHAR(64) NOT NULL UNIQUE,
 					"password_hash" VARCHAR(255) NOT NULL,
 					"role" VARCHAR(32) NOT NULL,
+					"user_track" VARCHAR(16) NOT NULL,
+					"cohort" INTEGER NOT NULL,
+					"cohort_order" INTEGER NOT NULL,
+					"public_code" VARCHAR(16) NOT NULL UNIQUE,
 					"force_password_change" BOOLEAN NOT NULL,
 					"is_active" BOOLEAN NOT NULL,
 					"last_login_at" TIMESTAMP NULL,
@@ -77,6 +81,12 @@ class UserRepositoryTest : FunSpec() {
 				.assertNext { user ->
 					user.username shouldBe "user_01"
 					user.role shouldBe UserRole.USER
+				}
+				.verifyComplete()
+
+			StepVerifier.create(userRepository.findByPublicCode("#NO001"))
+				.assertNext { user ->
+					user.username shouldBe "user_01"
 				}
 				.verifyComplete()
 		}

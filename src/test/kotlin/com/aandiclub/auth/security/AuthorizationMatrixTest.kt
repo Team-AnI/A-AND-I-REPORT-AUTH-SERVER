@@ -50,6 +50,10 @@ class AuthorizationMatrixTest : StringSpec() {
 					"username" VARCHAR(64) NOT NULL UNIQUE,
 					"password_hash" VARCHAR(255) NOT NULL,
 					"role" VARCHAR(32) NOT NULL,
+					"user_track" VARCHAR(16) NOT NULL,
+					"cohort" INTEGER NOT NULL,
+					"cohort_order" INTEGER NOT NULL,
+					"public_code" VARCHAR(16) NOT NULL UNIQUE,
 					"force_password_change" BOOLEAN NOT NULL DEFAULT FALSE,
 					"is_active" BOOLEAN NOT NULL DEFAULT TRUE,
 					"last_login_at" TIMESTAMP NULL,
@@ -219,6 +223,29 @@ class AuthorizationMatrixTest : StringSpec() {
 				.expectStatus().isForbidden
 		}
 
+		"GET /v1/users/lookup denies USER role" {
+			val token = accessToken(UUID.randomUUID(), "tester_user_lookup_denied", UserRole.USER)
+			webClient().get()
+				.uri("/v1/users/lookup?code=NO001")
+				.headers { it.setBearerAuth(token) }
+				.exchange()
+				.expectStatus().isForbidden
+		}
+
+		"GET /v1/users/lookup allows ORGANIZER role" {
+			val targetUserId = UUID.randomUUID()
+			insertUser(targetUserId, "lookup_target", UserRole.USER)
+			val organizerToken = accessToken(UUID.randomUUID(), "tester_lookup_organizer", UserRole.ORGANIZER)
+
+			webClient().get()
+				.uri("/v1/users/lookup?code=NO001")
+				.headers { it.setBearerAuth(organizerToken) }
+				.exchange()
+				.expectStatus().isOk
+				.expectBody()
+				.jsonPath("$.success").isEqualTo(true)
+		}
+
 		"GET /v1/admin/ping denies ORGANIZER role" {
 			val token = accessToken(UUID.randomUUID(), "tester_organizer_denied", UserRole.ORGANIZER)
 			webClient().get()
@@ -324,6 +351,10 @@ class AuthorizationMatrixTest : StringSpec() {
 				"username",
 				"password_hash",
 				"role",
+				"user_track",
+				"cohort",
+				"cohort_order",
+				"public_code",
 				"force_password_change",
 				"is_active",
 				"last_login_at",
@@ -337,6 +368,10 @@ class AuthorizationMatrixTest : StringSpec() {
 				:username,
 				:passwordHash,
 				:role,
+				:userTrack,
+				:cohort,
+				:cohortOrder,
+				:publicCode,
 				:forcePasswordChange,
 				:isActive,
 				:lastLoginAt,
@@ -352,6 +387,14 @@ class AuthorizationMatrixTest : StringSpec() {
 			.bind("username", username)
 			.bind("passwordHash", "hash")
 			.bind("role", role.name)
+			.bind("userTrack", "NO")
+			.bind("cohort", 0)
+			.bind("cohortOrder", 1)
+			.bind("publicCode", when (role) {
+				UserRole.ADMIN -> "#AD001"
+				UserRole.ORGANIZER -> "#OR001"
+				UserRole.USER -> "#NO001"
+			})
 			.bind("forcePasswordChange", false)
 			.bind("isActive", true)
 			.bindNull("lastLoginAt", Instant::class.java)

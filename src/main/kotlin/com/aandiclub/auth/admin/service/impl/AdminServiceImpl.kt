@@ -5,8 +5,8 @@ import com.aandiclub.auth.admin.domain.UserInviteEntity
 import com.aandiclub.auth.admin.invite.InviteTokenCacheService
 import com.aandiclub.auth.admin.password.CredentialGenerator
 import com.aandiclub.auth.admin.repository.UserInviteRepository
-import com.aandiclub.auth.admin.service.AdminService
 import com.aandiclub.auth.admin.sequence.UsernameSequenceService
+import com.aandiclub.auth.admin.service.AdminService
 import com.aandiclub.auth.admin.web.dto.AdminUserSummary
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserRequest
 import com.aandiclub.auth.admin.web.dto.CreateAdminUserResponse
@@ -19,7 +19,9 @@ import com.aandiclub.auth.security.service.PasswordService
 import com.aandiclub.auth.security.token.TokenHashService
 import com.aandiclub.auth.user.domain.UserEntity
 import com.aandiclub.auth.user.domain.UserRole
+import com.aandiclub.auth.user.domain.UserTrack
 import com.aandiclub.auth.user.repository.UserRepository
+import com.aandiclub.auth.user.service.UserPublicCodeService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Mono
@@ -36,6 +38,7 @@ class AdminServiceImpl(
 	private val credentialGenerator: CredentialGenerator,
 	private val passwordService: PasswordService,
 	private val tokenHashService: TokenHashService,
+	private val userPublicCodeService: UserPublicCodeService,
 	private val inviteProperties: InviteProperties,
 	private val clock: Clock = Clock.systemUTC(),
 ) : AdminService {
@@ -45,14 +48,24 @@ class AdminServiceImpl(
 			.collectList()
 
 	override fun createUser(request: CreateAdminUserRequest): Mono<CreateAdminUserResponse> =
-		usernameSequenceService.nextSequence()
-			.flatMap { sequence ->
-				val username = "user_${sequence.toString().padStart(2, '0')}"
-				when (request.provisionType) {
-					ProvisionType.PASSWORD -> createPasswordProvisionedUser(username, request)
-					ProvisionType.INVITE -> createInviteProvisionedUser(username, request)
-				}
+		Mono.zip(
+			usernameSequenceService.nextSequence(),
+			usernameSequenceService.nextCohortOrderSequence(request.cohort),
+		).flatMap { tuple ->
+			val username = "user_${tuple.t1.toString().padStart(2, '0')}"
+			val cohortOrder = tuple.t2.toInt()
+			val userTrack = userPublicCodeService.resolveTrack(request.role, request.userTrack)
+			val publicCode = userPublicCodeService.generate(
+				role = request.role,
+				userTrack = userTrack,
+				cohort = request.cohort,
+				cohortOrder = cohortOrder,
+			)
+			when (request.provisionType) {
+				ProvisionType.PASSWORD -> createPasswordProvisionedUser(username, request, userTrack, cohortOrder, publicCode)
+				ProvisionType.INVITE -> createInviteProvisionedUser(username, request, userTrack, cohortOrder, publicCode)
 			}
+		}
 
 	override fun resetPassword(userId: UUID): Mono<ResetPasswordResponse> =
 		userRepository.findById(userId)
@@ -71,7 +84,12 @@ class AdminServiceImpl(
 				}
 			}
 
-	override fun updateUserRole(targetUserId: UUID, role: UserRole, actorUserId: UUID): Mono<UpdateUserRoleResponse> {
+	override fun updateUserRole(
+		targetUserId: UUID,
+		role: UserRole,
+		userTrack: UserTrack?,
+		actorUserId: UUID,
+	): Mono<UpdateUserRoleResponse> {
 		if (targetUserId == actorUserId) {
 			return Mono.error(AppException(ErrorCode.FORBIDDEN, "Admin cannot change own role."))
 		}
@@ -79,21 +97,43 @@ class AdminServiceImpl(
 		return userRepository.findById(targetUserId)
 			.switchIfEmpty(Mono.error(AppException(ErrorCode.NOT_FOUND, "User not found.")))
 			.flatMap { user ->
-				userRepository.save(user.copy(role = role))
-					.map { saved ->
-						logger.warn(
-							"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={}",
-							saved.id,
-							saved.username,
-							user.role,
-							saved.role,
-						)
-						UpdateUserRoleResponse(
-							id = requireNotNull(saved.id),
-							username = saved.username,
-							role = saved.role,
-						)
-					}
+				val resolvedTrack = userPublicCodeService.resolveTrack(
+					role = role,
+					requestedTrack = if (role == UserRole.USER) userTrack ?: user.userTrack else null,
+				)
+				val recalculatedPublicCode = userPublicCodeService.generate(
+					role = role,
+					userTrack = resolvedTrack,
+					cohort = user.cohort,
+					cohortOrder = user.cohortOrder,
+				)
+				userRepository.save(
+					user.copy(
+						role = role,
+						userTrack = resolvedTrack,
+						publicCode = recalculatedPublicCode,
+					),
+				).map { saved ->
+					logger.warn(
+						"security_audit event=admin_user_role_changed user_id={} username={} old_role={} new_role={} old_track={} new_track={} public_code={}",
+						saved.id,
+						saved.username,
+						user.role,
+						saved.role,
+						user.userTrack,
+						saved.userTrack,
+						saved.publicCode,
+					)
+					UpdateUserRoleResponse(
+						id = requireNotNull(saved.id),
+						username = saved.username,
+						role = saved.role,
+						userTrack = saved.userTrack,
+						cohort = saved.cohort,
+						cohortOrder = saved.cohortOrder,
+						publicCode = saved.publicCode,
+					)
+				}
 			}
 	}
 
@@ -120,6 +160,9 @@ class AdminServiceImpl(
 	private fun createPasswordProvisionedUser(
 		username: String,
 		request: CreateAdminUserRequest,
+		userTrack: UserTrack,
+		cohortOrder: Int,
+		publicCode: String,
 	): Mono<CreateAdminUserResponse> {
 		val temporaryPassword = credentialGenerator.randomPassword(32)
 		val hashedPassword = passwordService.hash(temporaryPassword)
@@ -128,15 +171,32 @@ class AdminServiceImpl(
 				username = username,
 				passwordHash = hashedPassword,
 				role = request.role,
+				userTrack = userTrack,
+				cohort = request.cohort,
+				cohortOrder = cohortOrder,
+				publicCode = publicCode,
 				forcePasswordChange = true,
 				isActive = true,
 			),
 		).map { saved ->
-			logger.warn("security_audit event=admin_user_created type=password user_id={} username={} role={}", saved.id, saved.username, saved.role)
+			logger.warn(
+				"security_audit event=admin_user_created type=password user_id={} username={} role={} track={} cohort={} cohort_order={} public_code={}",
+				saved.id,
+				saved.username,
+				saved.role,
+				saved.userTrack,
+				saved.cohort,
+				saved.cohortOrder,
+				saved.publicCode,
+			)
 			CreateAdminUserResponse(
 				id = requireNotNull(saved.id),
 				username = saved.username,
 				role = saved.role,
+				userTrack = saved.userTrack,
+				cohort = saved.cohort,
+				cohortOrder = saved.cohortOrder,
+				publicCode = saved.publicCode,
 				provisionType = ProvisionType.PASSWORD,
 				temporaryPassword = temporaryPassword,
 			)
@@ -146,6 +206,9 @@ class AdminServiceImpl(
 	private fun createInviteProvisionedUser(
 		username: String,
 		request: CreateAdminUserRequest,
+		userTrack: UserTrack,
+		cohortOrder: Int,
+		publicCode: String,
 	): Mono<CreateAdminUserResponse> {
 		val rawInviteToken = credentialGenerator.randomToken()
 		val hashedInviteToken = tokenHashService.sha256Hex(rawInviteToken)
@@ -157,6 +220,10 @@ class AdminServiceImpl(
 				username = username,
 				passwordHash = placeholderPasswordHash,
 				role = request.role,
+				userTrack = userTrack,
+				cohort = request.cohort,
+				cohortOrder = cohortOrder,
+				publicCode = publicCode,
 				forcePasswordChange = true,
 				isActive = false,
 			),
@@ -173,16 +240,24 @@ class AdminServiceImpl(
 					.thenReturn(savedInvite)
 			}.map {
 				logger.warn(
-					"security_audit event=admin_user_created type=invite user_id={} username={} role={} expires_at={}",
+					"security_audit event=admin_user_created type=invite user_id={} username={} role={} track={} cohort={} cohort_order={} public_code={} expires_at={}",
 					savedUser.id,
 					savedUser.username,
 					savedUser.role,
+					savedUser.userTrack,
+					savedUser.cohort,
+					savedUser.cohortOrder,
+					savedUser.publicCode,
 					expiresAt,
 				)
 				CreateAdminUserResponse(
 					id = requireNotNull(savedUser.id),
 					username = savedUser.username,
 					role = savedUser.role,
+					userTrack = savedUser.userTrack,
+					cohort = savedUser.cohort,
+					cohortOrder = savedUser.cohortOrder,
+					publicCode = savedUser.publicCode,
 					provisionType = ProvisionType.INVITE,
 					inviteLink = "${inviteProperties.activationBaseUrl}?token=$rawInviteToken",
 					expiresAt = expiresAt,
@@ -196,6 +271,10 @@ class AdminServiceImpl(
 			id = requireNotNull(user.id),
 			username = user.username,
 			role = user.role,
+			userTrack = user.userTrack,
+			cohort = user.cohort,
+			cohortOrder = user.cohortOrder,
+			publicCode = user.publicCode,
 			isActive = user.isActive,
 			forcePasswordChange = user.forcePasswordChange,
 		)

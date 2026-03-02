@@ -6,6 +6,7 @@ import com.aandiclub.auth.admin.web.dto.CreateAdminUserResponse
 import com.aandiclub.auth.admin.web.dto.ResetPasswordResponse
 import com.aandiclub.auth.admin.web.dto.UpdateUserRoleResponse
 import com.aandiclub.auth.user.domain.UserRole
+import com.aandiclub.auth.user.domain.UserTrack
 import reactor.core.publisher.Mono
 import java.util.UUID
 
@@ -13,6 +14,6 @@ interface AdminService {
 	fun getUsers(): Mono<List<AdminUserSummary>>
 	fun createUser(request: CreateAdminUserRequest): Mono<CreateAdminUserResponse>
 	fun resetPassword(userId: UUID): Mono<ResetPasswordResponse>
-	fun updateUserRole(targetUserId: UUID, role: UserRole, actorUserId: UUID): Mono<UpdateUserRoleResponse>
+	fun updateUserRole(targetUserId: UUID, role: UserRole, userTrack: UserTrack?, actorUserId: UUID): Mono<UpdateUserRoleResponse>
 	fun deleteUser(targetUserId: UUID, actorUserId: UUID): Mono<Void>
 }
